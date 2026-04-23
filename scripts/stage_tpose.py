@@ -1,0 +1,483 @@
+"""Stage a robot at T-pose and dump its alignment spec.
+
+Authors a ``specs/tpose/{robot}.json`` — the numeric contract every downstream
+alignment metric measures against — plus three reference PNGs (front/side/back)
+that agents and humans use as the visual ground truth for "what correct looks
+like".
+
+Pose is constructed **from the command line**, not from GUI drag. MuJoCo's
+passive viewer is view-only (no joint sliders), and GUI staging is not
+reproducible across agents anyway. The flow is:
+
+    # 1. Build the pose from a baseline (qpos0 from the XML) + named tweaks.
+    #    Baseline 'home' = model.qpos0 (standing upright, arms at sides).
+    #    Baseline 'tpose' = qpos0 + shoulder_roll ±π/2 (arms out to sides).
+    python scripts/stage_tpose.py --robot unitree_g1 --preset tpose \\
+        --output_dir specs/tpose/
+
+    # 2. Override individual joints by name if the preset needs tweaking.
+    python scripts/stage_tpose.py --robot unitree_g1 --preset tpose \\
+        --joint left_wrist_roll_joint=0.1 \\
+        --joint right_wrist_roll_joint=-0.1 \\
+        --output_dir specs/tpose/
+
+    # 3. Optional: open viewer on the constructed pose for visual confirmation.
+    #    Uses mujoco.viewer.launch (managed), gravity disabled, robot frozen.
+    #    Close the window to continue and write artifacts.
+    python scripts/stage_tpose.py --robot unitree_g1 --preset tpose \\
+        --preview --output_dir specs/tpose/
+
+    # 4. Reuse an existing spec's qpos verbatim (round-trip).
+    python scripts/stage_tpose.py --robot unitree_g1 \\
+        --qpos_file specs/tpose/unitree_g1.json --output_dir specs/tpose/
+
+List joint names for a robot with ``--list_joints``.
+
+Requires ``pip install -e ".[demo]"`` (mujoco). GMR is auto-located as a
+sibling directory to fetch ``ROBOT_XML_DICT`` and ``IK_CONFIG_DICT``; pass
+``--xml`` + ``--link_names`` explicitly to use a robot GMR doesn't know about.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+
+_HERE = Path(__file__).resolve().parent
+_ROBOHARNESS_SRC = _HERE.parent / "src"
+if _ROBOHARNESS_SRC.exists() and str(_ROBOHARNESS_SRC) not in sys.path:
+    sys.path.insert(0, str(_ROBOHARNESS_SRC))
+
+GMR_ROOT = _HERE.parent.parent / "GMR"
+if GMR_ROOT.exists() and str(GMR_ROOT) not in sys.path:
+    sys.path.insert(0, str(GMR_ROOT))
+
+
+def _load_gmr_params() -> object:
+    """Load GMR's params.py directly.
+
+    Importing ``general_motion_retargeting`` triggers its ``__init__.py``,
+    which imports heavy dependencies (``mink``). ``params.py`` only declares
+    path dictionaries — load it as a file-level module to avoid the chain.
+    """
+    import importlib.util
+
+    params_path = GMR_ROOT / "general_motion_retargeting" / "params.py"
+    if not params_path.exists():
+        raise RuntimeError(f"GMR params.py not found at {params_path}; is GMR checked out?")
+    spec = importlib.util.spec_from_file_location("_gmr_params", params_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Could not build spec for {params_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _resolve_robot(robot: str, src: str) -> tuple[Path, list[str], float]:
+    """Return (xml_path, controlled_link_names, viewer_cam_distance) from GMR."""
+    params = _load_gmr_params()
+    xml_path = Path(str(params.ROBOT_XML_DICT[robot]))
+    ik_config_path = Path(str(params.IK_CONFIG_DICT[src][robot]))
+    with ik_config_path.open() as f:
+        ik_config = json.load(f)
+
+    link_names = sorted(
+        set(ik_config.get("ik_match_table1", {}).keys())
+        | set(ik_config.get("ik_match_table2", {}).keys())
+    )
+    cam_distance = float(params.VIEWER_CAM_DISTANCE_DICT.get(robot, 2.5))
+    return xml_path, link_names, cam_distance
+
+
+# Known T-pose presets per robot family. Keyed by robot name (or family).
+# Each entry is {joint_name: qpos_value}; applied on top of the XML's qpos0.
+# Shoulder-roll ±π/2 abducts the arm to horizontal ("T"). Other joints stay
+# at their XML defaults (standing, straight legs, torso vertical).
+_TPOSE_PRESETS: dict[str, dict[str, float]] = {
+    "unitree_g1": {
+        "left_shoulder_roll_joint": 1.5708,  # +90°
+        "right_shoulder_roll_joint": -1.5708,  # -90°
+    },
+    "unitree_g1_with_hands": {
+        "left_shoulder_roll_joint": 1.5708,
+        "right_shoulder_roll_joint": -1.5708,
+    },
+}
+
+
+def _apply_joint_overrides(
+    model: Any,  # mujoco.MjModel
+    qpos: np.ndarray,
+    overrides: dict[str, float],
+    source: str,
+) -> np.ndarray:
+    """Set named joint qpos entries by looking up qposadr from the model."""
+    import mujoco
+
+    out = qpos.copy()
+    for joint_name, value in overrides.items():
+        jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, joint_name)
+        if jid < 0:
+            raise ValueError(
+                f"{source}: joint {joint_name!r} not found in model. "
+                "Use --list_joints to see available names."
+            )
+        jtype = int(model.jnt_type[jid])
+        # mjJNT_HINGE=3, mjJNT_SLIDE=2 occupy a single qpos slot; free/ball are
+        # multi-DOF and don't fit this scalar-override interface.
+        if jtype not in (2, 3):
+            raise ValueError(
+                f"{source}: joint {joint_name!r} is type {jtype} "
+                "(free/ball); use --qpos_file for multi-DOF joints."
+            )
+        adr = int(model.jnt_qposadr[jid])
+        out[adr] = float(value)
+    return out
+
+
+def _parse_joint_flag(spec: str) -> tuple[str, float]:
+    """Parse NAME=VALUE. Raises ValueError for malformed input."""
+    if "=" not in spec:
+        raise ValueError(f"--joint expects NAME=VALUE, got {spec!r}")
+    name, _, value_str = spec.partition("=")
+    name = name.strip()
+    if not name:
+        raise ValueError(f"--joint has empty name: {spec!r}")
+    try:
+        value = float(value_str)
+    except ValueError as exc:
+        raise ValueError(f"--joint {name!r}: bad float {value_str!r}") from exc
+    return name, value
+
+
+def _build_qpos(
+    model: Any,
+    preset: str,
+    joint_flags: list[str],
+    qpos_file: Path | None,
+    qpos_raw: str | None,
+    robot_name: str,
+) -> np.ndarray:
+    """Construct the final qpos from baseline + preset + per-joint overrides.
+
+    Priority (each later layer wins): qpos0 → preset → --joint overrides.
+    Alternatively, --qpos_file or --qpos short-circuit to a full vector.
+    """
+    import mujoco
+
+    if qpos_file is not None:
+        with qpos_file.open() as f:
+            data = json.load(f)
+        qpos = np.asarray(data["qpos"], dtype=np.float64)
+        if qpos.shape != (model.nq,):
+            raise ValueError(
+                f"qpos in {qpos_file} has shape {qpos.shape}, model expects ({model.nq},)"
+            )
+        return qpos
+    if qpos_raw is not None:
+        qpos = np.fromstring(qpos_raw, dtype=np.float64, sep=" ")
+        if qpos.shape != (model.nq,):
+            raise ValueError(f"--qpos had {qpos.shape[0]} values, model expects {model.nq}")
+        return qpos
+
+    # Start from the XML's default standing pose.
+    data = mujoco.MjData(model)
+    mujoco.mj_resetData(model, data)
+    qpos = np.asarray(data.qpos).copy()
+
+    if preset == "tpose":
+        overrides = _TPOSE_PRESETS.get(robot_name)
+        if overrides is None:
+            raise ValueError(
+                f"No 'tpose' preset defined for robot {robot_name!r}. "
+                f"Known: {sorted(_TPOSE_PRESETS)}. "
+                "Use --joint flags to specify arm-raise joints manually, "
+                "or add this robot to _TPOSE_PRESETS in scripts/stage_tpose.py."
+            )
+        qpos = _apply_joint_overrides(model, qpos, overrides, source=f"preset={preset}")
+    elif preset != "home":
+        raise ValueError(f"Unknown preset {preset!r}; choose from: home, tpose")
+
+    if joint_flags:
+        cli_overrides = dict(_parse_joint_flag(s) for s in joint_flags)
+        qpos = _apply_joint_overrides(model, qpos, cli_overrides, source="--joint")
+
+    return qpos
+
+
+def _snapshot_spec(
+    robot: str,
+    xml_path: Path,
+    qpos: np.ndarray,
+    link_names: list[str],
+) -> dict:
+    import mujoco
+
+    model = mujoco.MjModel.from_xml_path(str(xml_path))
+    data = mujoco.MjData(model)
+    data.qpos[:] = qpos
+    mujoco.mj_forward(model, data)
+
+    links: dict[str, dict] = {}
+    for name in link_names:
+        bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, name)
+        if bid < 0:
+            print(f"[stage_tpose] WARN: link {name!r} not in XML — skipped")
+            continue
+        links[name] = {
+            "pos": np.asarray(data.xpos[bid]).tolist(),
+            "R": np.asarray(data.xmat[bid]).reshape(3, 3).tolist(),
+        }
+
+    return {
+        "robot": robot,
+        "xml_path": str(xml_path),
+        "qpos": qpos.tolist(),
+        "links": links,
+    }
+
+
+def _render_reference_views(
+    xml_path: Path,
+    qpos: np.ndarray,
+    cam_distance: float,
+    out_dir: Path,
+    stem: str,
+    width: int = 640,
+    height: int = 480,
+) -> list[Path]:
+    """Render front/side/back offscreen PNGs aimed at the robot root."""
+    import mujoco
+    from PIL import Image
+
+    model = mujoco.MjModel.from_xml_path(str(xml_path))
+    data = mujoco.MjData(model)
+    data.qpos[:] = qpos
+    mujoco.mj_forward(model, data)
+
+    renderer = mujoco.Renderer(model, height=height, width=width)
+    lookat = np.asarray(data.xpos[1])  # first non-world body center
+
+    views = {
+        "front": (0.0, -10.0),  # azimuth=0, elevation=-10° (facing +X looking toward +Y)
+        "side": (90.0, -10.0),
+        "back": (180.0, -10.0),
+    }
+    cam = mujoco.MjvCamera()
+    cam.type = mujoco.mjtCamera.mjCAMERA_FREE
+    cam.lookat[:] = lookat
+    cam.distance = cam_distance
+
+    out_paths: list[Path] = []
+    for name, (az, el) in views.items():
+        cam.azimuth = az
+        cam.elevation = el
+        renderer.update_scene(data, camera=cam)
+        img = renderer.render()
+        path = out_dir / f"{stem}_{name}.png"
+        Image.fromarray(img).save(path)
+        out_paths.append(path)
+        print(f"[stage_tpose] wrote {path}")
+    renderer.close()
+    return out_paths
+
+
+def _preview_in_viewer(xml_path: Path, qpos: np.ndarray) -> np.ndarray:
+    """Open a MuJoCo viewer on the constructed qpos for visual confirmation.
+
+    Uses the passive viewer with its own sync loop; gravity is zeroed so the
+    robot does not fall and ``mj_forward`` (not ``mj_step``) keeps the pose
+    fixed at exactly ``qpos``. The user can orbit the camera and close the
+    window when done. This is purely a visual check — joint edits in the
+    viewer would require the managed ``launch()`` entry point and its
+    physics loop, which defeats the point of a reproducible CLI-built pose.
+
+    Returns ``qpos`` unchanged; keeping the signature ``-> ndarray`` so
+    future implementations could allow mutation (e.g. a managed viewer
+    behind a flag) without changing callers.
+    """
+    import time
+
+    import mujoco
+    import mujoco.viewer
+
+    model = mujoco.MjModel.from_xml_path(str(xml_path))
+    # Freeze physics — we want the user to see exactly what gets written,
+    # not a falling rag-doll.
+    model.opt.gravity[:] = 0.0
+    model.opt.disableflags |= mujoco.mjtDisableBit.mjDSBL_GRAVITY
+
+    data = mujoco.MjData(model)
+    data.qpos[:] = qpos
+    mujoco.mj_forward(model, data)
+
+    print(
+        "\n[stage_tpose] Preview viewer opened. This shows the constructed pose.\n"
+        "             Orbit camera with mouse. Close the window to write\n"
+        "             artifacts. Joint sliders are NOT available here —\n"
+        "             adjust the pose via --joint NAME=VALUE on the CLI.\n"
+    )
+    with mujoco.viewer.launch_passive(model, data) as viewer:
+        while viewer.is_running():
+            # Keep qpos pinned; do not step physics.
+            data.qpos[:] = qpos
+            mujoco.mj_forward(model, data)
+            viewer.sync()
+            time.sleep(1.0 / 60.0)
+
+    return qpos
+
+
+def _list_joints(xml_path: Path) -> None:
+    """Print joint table for a robot, formatted for CLI use."""
+    import mujoco
+
+    model = mujoco.MjModel.from_xml_path(str(xml_path))
+    jtype_names = {0: "free", 1: "ball", 2: "slide", 3: "hinge"}
+    print(f"{'idx':>3} {'type':6s} {'range':<24} name")
+    for i in range(model.njnt):
+        name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_JOINT, i)
+        jtype = jtype_names.get(int(model.jnt_type[i]), "?")
+        lo, hi = model.jnt_range[i]
+        rng = f"[{lo:+.3f}, {hi:+.3f}]"
+        print(f"{i:>3} {jtype:6s} {rng:<24} {name}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Stage a robot at T-pose and dump its alignment spec + reference renders.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
+    parser.add_argument("--robot", help="Robot key in GMR ROBOT_XML_DICT (e.g. unitree_g1)")
+    parser.add_argument(
+        "--src",
+        default="bvh",
+        choices=["bvh", "smplx", "fbx_offline"],
+        help="IK config source — controls which links are in the spec",
+    )
+    parser.add_argument(
+        "--xml",
+        help="Override XML path (use instead of --robot for unknown robots)",
+    )
+    parser.add_argument(
+        "--link_names",
+        nargs="+",
+        help="Explicit link list (use with --xml when not using --robot)",
+    )
+    parser.add_argument(
+        "--preset",
+        default="tpose",
+        choices=["home", "tpose"],
+        help="Baseline pose: 'home' = XML qpos0 (default standing); "
+        "'tpose' = qpos0 + shoulder_roll ±π/2 (arms horizontal).",
+    )
+    parser.add_argument(
+        "--joint",
+        action="append",
+        default=[],
+        metavar="NAME=VALUE",
+        help="Override a joint's qpos value. Repeatable. Applied after --preset.",
+    )
+    parser.add_argument(
+        "--qpos",
+        help="Whitespace-separated full qpos vector (bypasses preset + --joint)",
+    )
+    parser.add_argument(
+        "--qpos_file",
+        type=Path,
+        help="Path to an existing spec JSON; reuses its qpos field verbatim",
+    )
+    parser.add_argument(
+        "--preview",
+        action="store_true",
+        help="Open MuJoCo viewer on the constructed pose (read-only); close to continue.",
+    )
+    parser.add_argument(
+        "--list_joints",
+        action="store_true",
+        help="Print the model's joint table and exit.",
+    )
+    parser.add_argument(
+        "--output_dir",
+        type=Path,
+        default=Path("specs/tpose"),
+        help="Where to write {robot}.json and {robot}_{view}.png",
+    )
+    parser.add_argument(
+        "--cam_distance",
+        type=float,
+        help="Override camera distance for reference renders",
+    )
+    parser.add_argument(
+        "--no_render",
+        action="store_true",
+        help="Skip producing reference PNGs",
+    )
+    args = parser.parse_args()
+
+    # Resolve XML + link set
+    if args.xml:
+        if not args.link_names:
+            parser.error("--xml requires --link_names")
+        xml_path = Path(args.xml)
+        link_names = list(args.link_names)
+        cam_distance = args.cam_distance or 2.5
+        robot_name = args.robot or xml_path.stem
+    else:
+        if not args.robot:
+            parser.error("either --robot or (--xml + --link_names) is required")
+        xml_path, link_names, cam_distance = _resolve_robot(args.robot, args.src)
+        robot_name = args.robot
+        if args.cam_distance is not None:
+            cam_distance = args.cam_distance
+
+    if args.list_joints:
+        _list_joints(xml_path)
+        return
+
+    import mujoco
+
+    model = mujoco.MjModel.from_xml_path(str(xml_path))
+
+    qpos = _build_qpos(
+        model=model,
+        preset=args.preset,
+        joint_flags=args.joint,
+        qpos_file=args.qpos_file,
+        qpos_raw=args.qpos,
+        robot_name=robot_name,
+    )
+
+    if args.preview:
+        qpos = _preview_in_viewer(xml_path, qpos)
+
+    # Snapshot + write
+    spec = _snapshot_spec(robot_name, xml_path, qpos, link_names)
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    spec_path = args.output_dir / f"{robot_name}.json"
+    with spec_path.open("w") as f:
+        json.dump(spec, f, indent=2)
+    print(f"[stage_tpose] wrote spec {spec_path} ({len(spec['links'])} links)")
+
+    if not args.no_render:
+        _render_reference_views(
+            xml_path=xml_path,
+            qpos=qpos,
+            cam_distance=cam_distance,
+            out_dir=args.output_dir,
+            stem=robot_name,
+        )
+
+    print("\n[stage_tpose] Done. Next: commit the spec and PNGs, review visually,")
+    print("             then run alignment metrics against any candidate qpos with")
+    print("             roboharness.alignment.compute_deviations(...).")
+
+
+if __name__ == "__main__":
+    main()
