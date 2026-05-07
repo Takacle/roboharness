@@ -18,8 +18,8 @@ import pytest
 
 mujoco = pytest.importorskip("mujoco")
 
+from roboharness._math_utils import rotation_matrix_to_axis_angle  # noqa: E402
 from roboharness.alignment.metrics import (  # noqa: E402
-    _rotation_matrix_to_axis_angle,
     compute_deviations,
     load_tpose_spec,
     total_deviation,
@@ -75,7 +75,7 @@ def _spec_from_qpos(xml_file: Path, qpos: np.ndarray, link_names: list[str]) -> 
 
 
 def test_axis_angle_identity() -> None:
-    axis, angle = _rotation_matrix_to_axis_angle(np.eye(3))
+    axis, angle = rotation_matrix_to_axis_angle(np.eye(3))
     assert angle == 0.0
     # axis convention: z for identity
     np.testing.assert_allclose(axis, [0.0, 0.0, 1.0])
@@ -84,7 +84,7 @@ def test_axis_angle_identity() -> None:
 def test_axis_angle_90deg_z() -> None:
     c, s = math.cos(math.pi / 2), math.sin(math.pi / 2)
     R = np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
-    axis, angle = _rotation_matrix_to_axis_angle(R)
+    axis, angle = rotation_matrix_to_axis_angle(R)
     assert abs(angle - math.pi / 2) < 1e-9
     np.testing.assert_allclose(axis, [0.0, 0.0, 1.0], atol=1e-9)
 
@@ -92,7 +92,7 @@ def test_axis_angle_90deg_z() -> None:
 def test_axis_angle_180deg_x() -> None:
     # 180° rotations are the numerically tricky case (sin(angle) ~ 0).
     R = np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]], dtype=np.float64)
-    axis, angle = _rotation_matrix_to_axis_angle(R)
+    axis, angle = rotation_matrix_to_axis_angle(R)
     assert abs(angle - math.pi) < 1e-6
     # Axis can be ±x; magnitude must match.
     assert abs(abs(axis[0]) - 1.0) < 1e-6

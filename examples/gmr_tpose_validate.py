@@ -38,43 +38,22 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     import numpy as np
 
-# Path setup — identical convention to the other GMR examples.
-_HERE = Path(__file__).resolve().parent
-GMR_ROOT = _HERE.parent.parent / "GMR"
-if not GMR_ROOT.exists():
-    raise RuntimeError(f"GMR not found at {GMR_ROOT}")
-sys.path.insert(0, str(GMR_ROOT))
+from _gmr_shared import load_motion
 
-_ROBOHARNESS_SRC = _HERE.parent / "src"
-if _ROBOHARNESS_SRC.exists() and str(_ROBOHARNESS_SRC) not in sys.path:
-    sys.path.insert(0, str(_ROBOHARNESS_SRC))
-
-from gmr_alignment_inspector import (  # noqa: E402
-    _load_bvh,
-    _load_fbx_offline,
-    _load_smplx,
-)
-
-from roboharness.alignment import (  # noqa: E402
+from roboharness.alignment import (
     compute_deviations,
     load_tpose_spec,
     total_deviation,
     worst_k,
 )
 
+_HERE = Path(__file__).resolve().parent
+
 
 def _retarget_first_frame(src: str, motion_file: str, robot: str, bvh_format: str) -> np.ndarray:
-    """Load the motion, retarget frame 0, return the candidate qpos."""
     from general_motion_retargeting import GeneralMotionRetargeting as GMR
 
-    if src == "bvh":
-        frames, human_height, _ = _load_bvh(motion_file, bvh_format)
-    elif src == "smplx":
-        frames, human_height, _ = _load_smplx(motion_file)
-    elif src == "fbx_offline":
-        frames, human_height, _ = _load_fbx_offline(motion_file)
-    else:
-        raise ValueError(f"Unknown src: {src!r}; choose from bvh, smplx, fbx_offline")
+    frames, human_height, _ = load_motion(src, motion_file, bvh_format)
 
     if not frames:
         raise RuntimeError(f"No frames loaded from {motion_file}")
@@ -125,6 +104,12 @@ def main() -> int:
         return 2
 
     spec = load_tpose_spec(spec_path)
+
+    # Apply SMPL-X base rotation to spec R matrices (same logic as agent)
+    if args.src in ("smplx",):
+        from roboharness.alignment.orientation_aligner import apply_smplx_base_rotation
+
+        spec = apply_smplx_base_rotation(spec)
 
     print(f"[validate] robot     : {args.robot}")
     print(f"[validate] spec      : {spec_path}")

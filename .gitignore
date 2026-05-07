@@ -35,6 +35,9 @@ checkpoints/
 # Runtime logs
 MUJOCO_LOG.TXT
 
+# Environment / secrets
+.env
+
 # OS
 .DS_Store
 Thumbs.db

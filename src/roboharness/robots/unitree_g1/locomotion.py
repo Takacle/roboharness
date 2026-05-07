@@ -48,6 +48,8 @@ from typing import Any, ClassVar, cast
 import numpy as np
 import numpy.typing as npt
 
+from roboharness._math_utils import normalize_quat, normalize_vector
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
@@ -103,13 +105,9 @@ def get_gravity_orientation(quaternion: np.ndarray) -> np.ndarray:
 
 
 def _normalize_quaternion(quaternion: np.ndarray) -> np.ndarray:
-    """Return a unit quaternion, falling back to identity for degenerate input."""
-    quat = np.asarray(quaternion, dtype=np.float32)
-    norm = float(np.linalg.norm(quat))
-    if norm < 1e-6:
-        return np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
-    normalized: np.ndarray = (quat / norm).astype(np.float32)
-    return normalized
+    """Return a unit quaternion as float32 array; thin wrapper around normalize_quat."""
+    result = normalize_quat(quaternion.tolist())
+    return np.array(result, dtype=np.float32)
 
 
 def _rotation_matrix_from_quaternion(quaternion: np.ndarray) -> np.ndarray:
@@ -127,13 +125,9 @@ def _rotation_matrix_from_quaternion(quaternion: np.ndarray) -> np.ndarray:
 
 
 def _normalize_vector(vector: np.ndarray, fallback: np.ndarray) -> np.ndarray:
-    """Return a unit vector, falling back to a provided direction if needed."""
-    vec = np.asarray(vector, dtype=np.float32)
-    norm = float(np.linalg.norm(vec))
-    if norm < 1e-6:
-        return np.asarray(fallback, dtype=np.float32)
-    normalized: np.ndarray = (vec / norm).astype(np.float32)
-    return normalized
+    """Return a unit vector; thin wrapper around normalize_vector."""
+    result = normalize_vector(vector, fallback)
+    return result.astype(np.float32)
 
 
 def _rotation_matrix_from_sixd(rotation_6d: np.ndarray) -> np.ndarray:

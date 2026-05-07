@@ -33,7 +33,6 @@ Multi-camera support:
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 from pathlib import Path
@@ -41,7 +40,8 @@ from typing import Any, cast
 
 import numpy as np
 
-from roboharness._utils import save_image as _save_image
+from roboharness._utils import to_float
+from roboharness.core.capture import CameraView, CaptureResult
 from roboharness.core.protocol import TaskProtocol
 
 try:
@@ -287,7 +287,7 @@ class RobotHarnessWrapper(Wrapper):  # type: ignore[type-arg]
         """Step environment. Captures screenshots at checkpoint steps."""
         obs, reward, terminated, truncated, info = self.env.step(action)
         self._step_count += 1
-        reward_f = _to_float(reward)
+        reward_f = to_float(reward)
 
         # Check if we hit a checkpoint
         if self._step_count in self._checkpoints:
@@ -317,66 +317,55 @@ class RobotHarnessWrapper(Wrapper):  # type: ignore[type-arg]
         from ``env.render()`` labeled as ``"default"``.
         """
         capture_dir = self.output_dir / self.task_name / f"trial_{self._trial_count:03d}" / name
-        capture_dir.mkdir(parents=True, exist_ok=True)
 
-        saved_files: dict[str, str] = {}
+        views: list[CameraView] = []
         captured_cameras: list[str] = []
 
         if self.camera_capability == MultiCameraCapability.NONE:
-            # Single-view fallback: one call to env.render()
             frame = _capture_frame_from_env(self.env, "default", MultiCameraCapability.NONE)
             if frame is not None:
-                path = capture_dir / "default_rgb.png"
-                _save_image(frame, path)
-                saved_files["default_rgb"] = str(path)
+                views.append(CameraView(name="default", rgb=frame))
                 captured_cameras.append("default")
         else:
-            # Multi-camera: capture from each configured camera
             for camera_name in self.cameras:
                 frame = _capture_frame_from_env(self.env, camera_name, self.camera_capability)
                 if frame is not None:
-                    path = capture_dir / f"{camera_name}_rgb.png"
-                    _save_image(frame, path)
-                    saved_files[f"{camera_name}_rgb"] = str(path)
+                    views.append(CameraView(name=camera_name, rgb=frame))
                     captured_cameras.append(camera_name)
 
-        # Save state info
-        state = {
+        # Build state dict
+        state: dict[str, Any] = {
             "step": self._step_count,
-            "reward": _to_float(reward),
+            "reward": to_float(reward),
             "timestamp": time.time(),
             "checkpoint": name,
             "trial": self._trial_count,
         }
-
-        # Include observation summary (avoid dumping huge arrays)
-        if isinstance(obs, np.ndarray):
-            state["obs_shape"] = list(obs.shape)
-            state["obs_dtype"] = str(obs.dtype)
-        elif hasattr(obs, "shape") and hasattr(obs, "dtype"):
-            # Torch tensors and similar array-like objects
+        if isinstance(obs, np.ndarray) or (hasattr(obs, "shape") and hasattr(obs, "dtype")):
             state["obs_shape"] = list(obs.shape)
             state["obs_dtype"] = str(obs.dtype)
         elif isinstance(obs, dict):
             state["obs_keys"] = list(obs.keys())
 
-        state_path = capture_dir / "state.json"
-        with state_path.open("w") as f:
-            json.dump(state, f, indent=2, default=str)
-        saved_files["state"] = str(state_path)
+        result = CaptureResult(
+            checkpoint_name=name,
+            step=self._step_count,
+            sim_time=self._step_count,
+            views=views,
+            state=state,
+            metadata={
+                "trial": self._trial_count,
+                "task": self.task_name,
+                "camera_capability": self.camera_capability,
+            },
+        )
+        result.save(capture_dir)
 
-        metadata_path = capture_dir / "metadata.json"
-        meta = {
-            "checkpoint": name,
-            "step": self._step_count,
-            "trial": self._trial_count,
-            "task": self.task_name,
-            "cameras": captured_cameras,
-            "camera_capability": self.camera_capability,
-            "files": saved_files,
-        }
-        with metadata_path.open("w") as f:
-            json.dump(meta, f, indent=2)
+        # Build saved_files dict for return value (matches previous contract)
+        saved_files: dict[str, str] = {}
+        for view in views:
+            saved_files[f"{view.name}_rgb"] = str(capture_dir / f"{view.name}_rgb.png")
+        saved_files["state"] = str(capture_dir / "state.json")
 
         return {
             "name": name,
@@ -384,27 +373,3 @@ class RobotHarnessWrapper(Wrapper):  # type: ignore[type-arg]
             "capture_dir": str(capture_dir),
             "files": saved_files,
         }
-
-
-def _to_float(value: Any) -> float:
-    """Convert a scalar value to float, handling tensor/array reward values."""
-    if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, np.number):
-        return float(value)
-    if isinstance(value, np.ndarray):
-        if value.size == 0:
-            return 0.0
-        return float(value.mean())
-    # Handle torch tensors and similar array-like objects
-    if hasattr(value, "item"):
-        # Multi-element tensors (e.g. vectorized envs): take the mean
-        if hasattr(value, "numel") and value.numel() > 1:
-            return float(value.float().mean().item())
-        if hasattr(value, "size") and isinstance(value.size, int) and value.size > 1:
-            return float(value.mean())
-        return float(value.item())
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return 0.0

@@ -450,20 +450,20 @@ def test_protocol_based_isaac_lab_wrapper(tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def test_to_float_with_cpu_torch_scalar():
-    """_to_float should extract float from a CPU scalar tensor."""
-    from roboharness.wrappers.gymnasium_wrapper import _to_float
+def testto_float_with_cpu_torch_scalar():
+    """to_float should extract float from a CPU scalar tensor."""
+    from roboharness._utils import to_float
 
     t = torch.tensor(0.5)
-    assert _to_float(t) == pytest.approx(0.5, abs=1e-5)
+    assert to_float(t) == pytest.approx(0.5, abs=1e-5)
 
 
-def test_to_float_with_cpu_torch_vector():
-    """_to_float should return mean for multi-element CPU tensors."""
-    from roboharness.wrappers.gymnasium_wrapper import _to_float
+def testto_float_with_cpu_torch_vector():
+    """to_float should return mean for multi-element CPU tensors."""
+    from roboharness._utils import to_float
 
     t = torch.tensor([1.0, 2.0, 3.0])
-    assert _to_float(t) == pytest.approx(2.0, abs=1e-5)
+    assert to_float(t) == pytest.approx(2.0, abs=1e-5)
 
 
 def test_to_numpy_rgb_with_float_tensor():

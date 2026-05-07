@@ -9,8 +9,7 @@ from typing import Any
 
 import numpy as np
 
-from roboharness._utils import save_image as _save_image
-from roboharness._utils import save_json as _save_json
+from roboharness._utils import save_image, save_json
 
 
 @dataclass
@@ -28,7 +27,7 @@ class CameraView:
         saved = {}
 
         rgb_path = directory / f"{self.name}_rgb.png"
-        _save_image(self.rgb, rgb_path)
+        save_image(self.rgb, rgb_path)
         saved["rgb"] = str(rgb_path)
 
         if self.depth is not None:
@@ -82,7 +81,7 @@ class CaptureResult:
 
         # Save state
         state_path = base_dir / "state.json"
-        _save_json(self.state, state_path)
+        save_json(self.state, state_path)
 
         # Save metadata
         meta = {
@@ -95,7 +94,7 @@ class CaptureResult:
             **self.metadata,
         }
         meta_path = base_dir / "metadata.json"
-        _save_json(meta, meta_path)
+        save_json(meta, meta_path)
 
         return base_dir
 
@@ -110,4 +109,4 @@ def _save_depth_viz(depth: np.ndarray, path: Path) -> None:
         normalized = np.zeros_like(depth, dtype=np.uint8)
     else:
         normalized = ((depth - d_min) / (d_max - d_min) * 255).astype(np.uint8)
-    _save_image(np.stack([normalized] * 3, axis=-1), path)
+    save_image(np.stack([normalized] * 3, axis=-1), path)

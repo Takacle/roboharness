@@ -32,6 +32,10 @@ MUJOCO_GL=osmesa python examples/mujoco_grasp.py
 - `src/roboharness/backends/` — SimulatorBackend protocol implementations (MuJoCo, etc.)
 - `src/roboharness/wrappers/` — Gymnasium wrappers (drop-in, zero-change integration)
 - `src/roboharness/storage/` — Task-oriented file storage
+- `src/roboharness/alignment/` — IK config, T-pose metrics, body matching, GMR registration
+- `src/roboharness/evaluate/` — Assertion engine, batch evaluation, LeRobot plugin
+- `src/roboharness/_utils.py` — Shared JSON/image/float utilities
+- `src/roboharness/_math_utils.py` — Shared quaternion/vector/rotation math
 - Public API exported from `src/roboharness/__init__.py`: `Harness`, `Checkpoint`, `CheckpointStore`, `CaptureResult`
 
 Key pattern: `SimulatorBackend` is a Protocol (structural typing). New backends implement it without inheriting from a base class.

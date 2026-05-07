@@ -18,12 +18,12 @@ gym = pytest.importorskip("gymnasium", reason="gymnasium not installed")
 
 from gymnasium import spaces  # noqa: E402
 
+from roboharness._utils import to_float  # noqa: E402
 from roboharness.wrappers import RobotHarnessWrapper  # noqa: E402
 from roboharness.wrappers.gymnasium_wrapper import (  # noqa: E402
     MultiCameraCapability,
     _capture_frame_from_env,
     _detect_camera_capability,
-    _to_float,
     _to_numpy_rgb,
 )
 
@@ -168,38 +168,38 @@ class TestToNumpyRgb:
 
 
 # ---------------------------------------------------------------------------
-# Tests for _to_float
+# Tests for to_float
 # ---------------------------------------------------------------------------
 
 
 class TestToFloat:
     def test_python_int(self):
-        assert _to_float(3) == 3.0
+        assert to_float(3) == 3.0
 
     def test_python_float(self):
-        assert _to_float(2.5) == 2.5
+        assert to_float(2.5) == 2.5
 
     def test_numpy_scalar(self):
-        assert _to_float(np.float64(1.5)) == 1.5
-        assert _to_float(np.int32(7)) == 7.0
+        assert to_float(np.float64(1.5)) == 1.5
+        assert to_float(np.int32(7)) == 7.0
 
     def test_numpy_array_scalar(self):
-        assert _to_float(np.array(3.14)) == pytest.approx(3.14)
+        assert to_float(np.array(3.14)) == pytest.approx(3.14)
 
     def test_numpy_array_vector_returns_mean(self):
         arr = np.array([1.0, 2.0, 3.0])
-        assert _to_float(arr) == pytest.approx(2.0)
+        assert to_float(arr) == pytest.approx(2.0)
 
     def test_numpy_empty_array_returns_zero(self):
-        assert _to_float(np.array([])) == 0.0
+        assert to_float(np.array([])) == 0.0
 
     def test_tensor_like_scalar(self):
         fake = FakeTensor(np.array([5.0]))
-        assert _to_float(fake) == pytest.approx(5.0)
+        assert to_float(fake) == pytest.approx(5.0)
 
     def test_tensor_like_vector_returns_mean(self):
         fake = FakeTensor(np.array([1.0, 2.0, 3.0, 4.0]))
-        assert _to_float(fake) == pytest.approx(2.5)
+        assert to_float(fake) == pytest.approx(2.5)
 
     def test_tensor_like_with_size_attr(self):
         """Object with .item() and .size (int) but no .numel() — e.g. numpy subclass."""
@@ -213,14 +213,14 @@ class TestToFloat:
             def mean(self):
                 return 2.0
 
-        assert _to_float(SizedTensor()) == pytest.approx(2.0)
+        assert to_float(SizedTensor()) == pytest.approx(2.0)
 
     def test_unconvertible_returns_zero(self):
-        assert _to_float(object()) == 0.0
+        assert to_float(object()) == 0.0
 
     def test_string_number_fallback(self):
         # str "3.14" is convertible via float()
-        assert _to_float("3.14") == pytest.approx(3.14)
+        assert to_float("3.14") == pytest.approx(3.14)
 
 
 # ---------------------------------------------------------------------------
@@ -378,7 +378,7 @@ class TestTensorObsSummary:
 
 
 # ---------------------------------------------------------------------------
-# Tests for tensor-like reward in _to_float via checkpoint
+# Tests for tensor-like reward in to_float via checkpoint
 # ---------------------------------------------------------------------------
 
 

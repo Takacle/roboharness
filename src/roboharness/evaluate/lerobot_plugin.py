@@ -31,6 +31,8 @@ from typing import Any
 
 import numpy as np
 
+from roboharness._utils import to_float
+
 logger = logging.getLogger(__name__)
 
 
@@ -214,7 +216,7 @@ def evaluate_policy(
             obs, reward, terminated, truncated, info = env.step(action)
             step_count = step
 
-            reward_val = float(reward) if not isinstance(reward, float) else reward
+            reward_val = to_float(reward)
             total_reward += reward_val
             episode_rewards.append(reward_val)
             last_info = info

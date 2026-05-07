@@ -204,6 +204,30 @@ harness_output/
 - **GraspTaskStore** — Grasp-task-specific storage with predefined checkpoints `["plan_start", "pre_grasp", "contact", "lift"]`
 - **EvaluationHistory** — Append-only JSONL log recording success rates and metrics per evaluation run. Supports trend detection (regression/improvement/stable)
 
+### `alignment/` — GMR IK Config & Motion Retargeting
+
+Numeric alignment metrics for retargeted robot motion. Pure Python (numpy + scipy), zero internal dependency on the rest of roboharness.
+
+| File | Responsibility |
+|------|---------------|
+| `skeleton_maps.py` | `HumanSkeleton` dataclass with role↔joint mapping, scale defaults, fallback maps, and skeleton-edge connectivity for SMPL-X and BVH formats |
+| `body_matcher.py` | Heuristic body-name→skeleton-role matching from MuJoCo XML body names |
+| `config_gen.py` | Generate and write GMR IK config JSON from match results |
+| `gmr_register.py` | Register new robots in GMR's `params.py` and script argument choices |
+| `orientation_aligner.py` | Auto-detect `world_rotation` from robot body geometry; SMPL-X base rotation application; lightweight XML body-name extraction |
+| `metrics.py` | Pose-deviation metrics against authored T-pose specs (axis-angle and position error) |
+| `optimize.py` | Derivative-free numerical optimization of IK config scale parameters |
+| `patch.py` | IK config quaternion/scale patching with mirror policy for table1↔table2 coupling |
+
+Two internal helper modules are shared across the GMR pipeline:
+- `_gmr_params.py` — Loads GMR's `params.py` without triggering heavy `__init__` chain.
+- `_gmr_path.py` — Centralized `find_gmr_root()` replacing ad-hoc path discovery.
+
+### Shared Utilities
+
+- **`_utils.py`** — `save_json`/`load_json` (with `NumpyEncoder`), `save_image`, `to_float`, `encode_image_base64`, `select_image_files`.
+- **`_math_utils.py`** — `normalize_quat`, `normalize_vector`, `quat_multiply`, `rotation_matrix_to_axis_angle`, `rotation_matrix_to_quat`, `axis_angle_to_quat`, `SMPLX_BASE_ROTATION_QUAT`, `IDENTITY_QUAT`.
+
 ### `wrappers/` — Gymnasium Integration
 
 **RobotHarnessWrapper** provides zero-change integration with any Gymnasium environment:

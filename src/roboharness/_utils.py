@@ -1,7 +1,8 @@
-"""Shared internal utilities — image saving and JSON I/O."""
+"""Shared internal utilities — image saving, JSON I/O, media helpers."""
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 from pathlib import Path
@@ -58,3 +59,46 @@ def load_json(path: Path) -> dict[str, Any]:
     with path.open() as f:
         result: dict[str, Any] = json.load(f)
     return result
+
+
+def to_float(value: Any) -> float:
+    """Convert a tensor/numpy/scalar value to float.
+
+    Handles PyTorch tensors (CPU/CUDA), numpy scalars/arrays, and Python numbers.
+    Multi-element tensors/arrays return the mean. Unconvertible values return 0.0.
+    """
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, np.number):
+        return float(value)
+    if isinstance(value, np.ndarray):
+        if value.size == 0:
+            return 0.0
+        return float(value.mean())
+    # Handle torch tensors and similar array-like objects via duck typing
+    if hasattr(value, "item"):
+        if hasattr(value, "numel") and value.numel() > 1:
+            return float(value.float().mean().item())
+        if hasattr(value, "size") and isinstance(value.size, int) and value.size > 1:
+            return float(value.mean())
+        return float(value.item())
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def encode_image_base64(path: Path) -> str:
+    """Read a file and return its base64-encoded string."""
+    return base64.standard_b64encode(path.read_bytes()).decode()
+
+
+def select_image_files(image_paths: list[Path], max_images: int) -> list[Path]:
+    """Select up to *max_images* files, preferring front/side/back views."""
+    if len(image_paths) <= max_images:
+        return image_paths
+    fronts = sorted(p for p in image_paths if "front" in p.name)
+    sides = sorted(p for p in image_paths if "side" in p.name)
+    backs = sorted(p for p in image_paths if "back" in p.name)
+    selected = (fronts + sides + backs)[:max_images]
+    return sorted(selected)

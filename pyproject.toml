@@ -42,6 +42,13 @@ demo = [
     "robot_descriptions>=1.0",
     "rerun-sdk>=0.18",
 ]
+mjlab = [
+    # Local development install — not for PyPI publishing.
+    # In CI/Docker, install separately: pip install /path/to/mjlab
+    "mjlab @ file:///home/user2/mjlab",
+    "mujoco>=3.6",
+    "torch>=2.0",
+]
 wbc = [
     "pin>=3.0",
     "pin-pink>=0.11",
@@ -111,6 +118,7 @@ markers = [
 omit = [
     "src/roboharness/backends/mujoco_meshcat.py",   # requires mujoco
     "src/roboharness/backends/visualizer.py",        # requires mujoco / meshcat
+    "src/roboharness/backends/mjlab_backend.py",    # requires mjlab + GPU (mujoco-warp)
     "src/roboharness/controllers/wbc_ik.py",         # requires pinocchio + pink
     "src/roboharness/controllers/locomotion.py",     # re-export shim for robots.unitree_g1
     "src/roboharness/robots/unitree_g1/locomotion.py", # requires onnxruntime + huggingface_hub
@@ -137,5 +145,7 @@ module = [
     "onnxruntime.*",
     "huggingface_hub.*",
     "mcp.*",
+    "mjlab.*",
+    "warp.*",
 ]
 ignore_missing_imports = true

@@ -49,40 +49,33 @@ from typing import Any
 import numpy as np
 
 _HERE = Path(__file__).resolve().parent
-_ROBOHARNESS_SRC = _HERE.parent / "src"
-if _ROBOHARNESS_SRC.exists() and str(_ROBOHARNESS_SRC) not in sys.path:
-    sys.path.insert(0, str(_ROBOHARNESS_SRC))
+sys.path.insert(0, str(_HERE.parent / "src"))
 
-GMR_ROOT = _HERE.parent.parent / "GMR"
-if GMR_ROOT.exists() and str(GMR_ROOT) not in sys.path:
-    sys.path.insert(0, str(GMR_ROOT))
+from roboharness.alignment._gmr_params import load_gmr_params  # noqa: E402
+from roboharness.alignment._gmr_path import find_gmr_root  # noqa: E402
+from roboharness.alignment.orientation_aligner import extract_xml_body_names  # noqa: E402
 
-
-def _load_gmr_params() -> object:
-    """Load GMR's params.py directly.
-
-    Importing ``general_motion_retargeting`` triggers its ``__init__.py``,
-    which imports heavy dependencies (``mink``). ``params.py`` only declares
-    path dictionaries — load it as a file-level module to avoid the chain.
-    """
-    import importlib.util
-
-    params_path = GMR_ROOT / "general_motion_retargeting" / "params.py"
-    if not params_path.exists():
-        raise RuntimeError(f"GMR params.py not found at {params_path}; is GMR checked out?")
-    spec = importlib.util.spec_from_file_location("_gmr_params", params_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Could not build spec for {params_path}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+GMR_ROOT = find_gmr_root()
 
 
 def _resolve_robot(robot: str, src: str) -> tuple[Path, list[str], float]:
     """Return (xml_path, controlled_link_names, viewer_cam_distance) from GMR."""
-    params = _load_gmr_params()
+    params = load_gmr_params(GMR_ROOT)
     xml_path = Path(str(params.ROBOT_XML_DICT[robot]))
-    ik_config_path = Path(str(params.IK_CONFIG_DICT[src][robot]))
+
+    # IK config provides the canonical link list. When missing (new robot),
+    # extract body names directly from the XML.
+    try:
+        ik_config_path = Path(str(params.IK_CONFIG_DICT[src][robot]))
+    except KeyError:
+        print(
+            f"[stage_tpose] No IK config for {robot}/{src}; "
+            "extracting body names from XML."
+        )
+        link_names = extract_xml_body_names(xml_path)
+        cam_distance = float(params.VIEWER_CAM_DISTANCE_DICT.get(robot, 2.5))
+        return xml_path, link_names, cam_distance
+
     with ik_config_path.open() as f:
         ik_config = json.load(f)
 
@@ -94,20 +87,54 @@ def _resolve_robot(robot: str, src: str) -> tuple[Path, list[str], float]:
     return xml_path, link_names, cam_distance
 
 
-# Known T-pose presets per robot family. Keyed by robot name (or family).
-# Each entry is {joint_name: qpos_value}; applied on top of the XML's qpos0.
-# Shoulder-roll ±π/2 abducts the arm to horizontal ("T"). Other joints stay
-# at their XML defaults (standing, straight legs, torso vertical).
-_TPOSE_PRESETS: dict[str, dict[str, float]] = {
-    "unitree_g1": {
-        "left_shoulder_roll_joint": 1.5708,  # +90°
-        "right_shoulder_roll_joint": -1.5708,  # -90°
-    },
-    "unitree_g1_with_hands": {
-        "left_shoulder_roll_joint": 1.5708,
-        "right_shoulder_roll_joint": -1.5708,
-    },
-}
+# T-pose auto-detection: instead of per-robot named presets, scan hinge joints
+# by their physical axis to identify shoulder-roll and elbow joints.
+_SHOULDER_ROLL_AXIS = (1.0, 0.0, 0.0)  # X-axis → abduction in T-pose
+_ELBOW_AXIS = (0.0, 1.0, 0.0)  # Y-axis → flexion in T-pose
+_TPOSE_SHOULDER_RADS = 1.5708  # ±π/2
+_TPOSE_ELBOW_RADS = 1.5708  # π/2
+
+
+def _detect_tpose_overrides(model: Any, robot_name: str) -> dict[str, float]:
+    """Auto-detect T-pose joint overrides from axis semantics.
+
+    Scans all hinge joints in the MuJoCo model, identifies shoulder-roll
+    and elbow joints by their axis convention (not by name pattern), and
+    returns {joint_name: rad_value} overrides to raise arms to T-pose.
+
+    Works for any humanoid robot regardless of naming convention.
+    """
+    import mujoco
+
+    overrides: dict[str, float] = {}
+    for jid in range(model.njnt):
+        jname = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_JOINT, jid) or ""
+        jtype = int(model.jnt_type[jid])
+        if jtype != mujoco.mjtJoint.mjJNT_HINGE:
+            continue
+        axis = tuple(float(model.jnt_axis[jid][i]) for i in range(3))
+        jname_lower = jname.lower()
+
+        # Detect side: left / right
+        side = 0.0  # 0 = unknown, +1 = left, -1 = right
+        if "left" in jname_lower:
+            side = 1.0
+        elif "right" in jname_lower:
+            side = -1.0
+
+        if axis == _SHOULDER_ROLL_AXIS and "shoulder" in jname_lower:
+            if side != 0.0:
+                overrides[jname] = _TPOSE_SHOULDER_RADS * side
+        elif axis == _ELBOW_AXIS and "elbow" in jname_lower:
+            overrides[jname] = _TPOSE_ELBOW_RADS
+
+    if not overrides:
+        raise ValueError(
+            f"No shoulder-roll or elbow joints auto-detected for robot {robot_name!r}. "
+            "Verify the XML has hinge joints with axis=(1,0,0) for shoulder roll "
+            "and axis=(0,1,0) for elbow. Use --joint flags to specify manually."
+        )
+    return overrides
 
 
 def _apply_joint_overrides(
@@ -191,14 +218,7 @@ def _build_qpos(
     qpos = np.asarray(data.qpos).copy()
 
     if preset == "tpose":
-        overrides = _TPOSE_PRESETS.get(robot_name)
-        if overrides is None:
-            raise ValueError(
-                f"No 'tpose' preset defined for robot {robot_name!r}. "
-                f"Known: {sorted(_TPOSE_PRESETS)}. "
-                "Use --joint flags to specify arm-raise joints manually, "
-                "or add this robot to _TPOSE_PRESETS in scripts/stage_tpose.py."
-            )
+        overrides = _detect_tpose_overrides(model, robot_name)
         qpos = _apply_joint_overrides(model, qpos, overrides, source=f"preset={preset}")
     elif preset != "home":
         raise ValueError(f"Unknown preset {preset!r}; choose from: home, tpose")
@@ -422,6 +442,18 @@ def main() -> None:
     args = parser.parse_args()
 
     # Resolve XML + link set
+    if args.list_joints:
+        # list_joints only needs the XML, not IK config
+        if args.xml:
+            xml_path = Path(args.xml)
+        else:
+            if not args.robot:
+                parser.error("either --robot or --xml is required")
+            params = load_gmr_params(GMR_ROOT)
+            xml_path = Path(str(params.ROBOT_XML_DICT[args.robot]))
+        _list_joints(xml_path)
+        return
+
     if args.xml:
         if not args.link_names:
             parser.error("--xml requires --link_names")
@@ -436,10 +468,6 @@ def main() -> None:
         robot_name = args.robot
         if args.cam_distance is not None:
             cam_distance = args.cam_distance
-
-    if args.list_joints:
-        _list_joints(xml_path)
-        return
 
     import mujoco
 

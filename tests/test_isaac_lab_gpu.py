@@ -9,7 +9,7 @@ Key behaviors validated:
   - Wrapper passes through CUDA tensor observations without moving them to CPU
   - Checkpoint capture correctly converts GPU tensors (rewards, render frames)
   - State serialization handles GPU tensor metadata (shape, dtype)
-  - _to_float / _to_numpy_rgb work with CUDA tensors
+  - to_float / _to_numpy_rgb work with CUDA tensors
 """
 
 from __future__ import annotations
@@ -28,10 +28,10 @@ if not torch.cuda.is_available():
 
 from gymnasium import spaces  # noqa: E402
 
+from roboharness._utils import to_float  # noqa: E402
 from roboharness.wrappers import RobotHarnessWrapper  # noqa: E402
 from roboharness.wrappers.gymnasium_wrapper import (  # noqa: E402
     MultiCameraCapability,
-    _to_float,
     _to_numpy_rgb,
 )
 
@@ -149,17 +149,17 @@ class CudaTiledCameraEnv(CudaIsaacLabEnv):
 
 
 @pytest.mark.gpu
-def test_to_float_cuda_scalar() -> None:
-    """_to_float should extract a Python float from a CUDA scalar tensor."""
+def testto_float_cuda_scalar() -> None:
+    """to_float should extract a Python float from a CUDA scalar tensor."""
     t = torch.tensor(3.14, device="cuda:0")
-    assert _to_float(t) == pytest.approx(3.14, abs=1e-5)
+    assert to_float(t) == pytest.approx(3.14, abs=1e-5)
 
 
 @pytest.mark.gpu
-def test_to_float_cuda_multi_element() -> None:
-    """_to_float should return the mean for multi-element CUDA tensors."""
+def testto_float_cuda_multi_element() -> None:
+    """to_float should return the mean for multi-element CUDA tensors."""
     t = torch.tensor([1.0, 2.0, 3.0], device="cuda:0")
-    assert _to_float(t) == pytest.approx(2.0, abs=1e-5)
+    assert to_float(t) == pytest.approx(2.0, abs=1e-5)
 
 
 @pytest.mark.gpu
