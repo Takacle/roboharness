@@ -857,6 +857,13 @@ def main() -> None:
         "Useful for fixing overall facing direction.",
     )
     parser.add_argument(
+        "--smplx_template_model",
+        default=None,
+        help="Path to SMPLX body model directory or .npz file for template "
+        "calibration in --solve_mode (SMPL-X source only). "
+        "Defaults to GMR/assets/body_models when it exists.",
+    )
+    parser.add_argument(
         "--api_key",
         default=os.environ.get("OPENAI_API_KEY", os.environ.get("ANTHROPIC_API_KEY", "")),
         help="API key (reads OPENAI_API_KEY / ANTHROPIC_API_KEY env vars by default)",
@@ -943,10 +950,20 @@ def main() -> None:
             f"({len(tpose_spec['links'])} links)  tpose_motion={args.tpose_motion}"
         )
     elif tpose_spec_path and not args.tpose_motion:
-        print(
-            f"[agent] Numeric gate OFF: spec {tpose_spec_path.name} found but "
-            "--tpose_motion not supplied. VLM will rely on vision only."
-        )
+        from roboharness.alignment import load_tpose_spec
+
+        tpose_spec = load_tpose_spec(tpose_spec_path)
+        if args.solve_mode and args.src == "smplx":
+            print(
+                f"[agent] Numeric gate (template): spec={tpose_spec_path.name} "
+                f"({len(tpose_spec['links'])} links)  SMPL-X template calibration"
+            )
+        else:
+            tpose_spec = None
+            print(
+                f"[agent] Numeric gate OFF: spec {tpose_spec_path.name} found but "
+                "--tpose_motion not supplied. VLM will rely on vision only."
+            )
     else:
         print("[agent] Numeric gate OFF: no T-pose spec / motion — VLM-only mode.")
 
@@ -965,6 +982,88 @@ def main() -> None:
     print(f"[agent] qpos shape: {qpos_seq.shape}")
 
     if args.solve_mode:
+        if args.src == "smplx" and tpose_spec is not None:
+            from roboharness.alignment.smplx_offset_solver import (
+                solve_smplx_offsets_from_template,
+            )
+            from roboharness.alignment.smplx_template import resolve_body_model_path
+
+            try:
+                body_model_path = resolve_body_model_path(
+                    getattr(args, "smplx_template_model", None)
+                )
+            except FileNotFoundError:
+                body_model_path = None
+
+            if body_model_path is not None:
+                print(
+                    "[agent] Solve mode: using SMPL-X "
+                    "template calibration (body model zero-pose)..."
+                )
+                new_config = solve_smplx_offsets_from_template(
+                    ik_config_path=config_path,
+                    tpose_spec_path=Path(args.tpose_spec),
+                    body_model_path=body_model_path,
+                )
+                n_solved = sum(
+                    1 for v in new_config.get("ik_match_table1", {}).values() if len(v) > 4
+                )
+                print(f"[agent] Solved quaternions for {n_solved} joints via template calibration")
+
+                qpos_spec = tpose_spec.get("qpos", [])
+                if qpos_spec and len(qpos_spec) > 7:
+                    import mujoco as mj
+
+                    xml_path = tpose_spec.get("xml_path", "")
+                    if xml_path:
+                        _model = mj.MjModel.from_xml_path(xml_path)
+                        _init = {}
+                        for _i in range(_model.njnt):
+                            _jname = mj.mj_id2name(_model, mj.mjtObj.mjOBJ_JOINT, _i)
+                            if _jname is None or _model.jnt_type[_i] == 0:
+                                continue
+                            _adr = _model.jnt_qposadr[_i]
+                            if _adr >= len(qpos_spec):
+                                continue
+                            _v = qpos_spec[_adr]
+                            if abs(_v) > 0.0001:
+                                _init[_jname] = round(float(_v), 6)
+                        if _init:
+                            new_config["init_qpos"] = _init
+                    if new_config.get("init_qpos"):
+                        print(f"[agent] Set init_qpos: {list(new_config['init_qpos'].keys())}")
+
+                with config_path.open("w") as f:
+                    json.dump(new_config, f, indent=4)
+                print(f"[agent] Config written → {config_path}")
+
+                print("[agent] Validating with template frame...")
+                from general_motion_retargeting import GeneralMotionRetargeting as GMR
+
+                from roboharness.alignment.smplx_template import load_smplx_template_tpose
+
+                frame, _ = load_smplx_template_tpose(body_model_path)
+                retargeter_tmpl = GMR(
+                    src_human="smplx",
+                    tgt_robot=args.robot,
+                    actual_human_height=1.66,
+                    verbose=False,
+                )
+                tpose_qpos = retargeter_tmpl.retarget(frame).copy()
+
+                from roboharness.alignment import compute_deviations, total_deviation, worst_k
+
+                report_new = compute_deviations(tpose_qpos, tpose_spec["xml_path"], tpose_spec)
+                total_new = total_deviation(report_new)
+                top_new = worst_k(report_new, 5)
+                max_new = top_new[0][1] if top_new else 0.0
+                print(f"[agent] Post-solve: total={total_new:.2f}°  max={max_new:.2f}°")
+                if max_new < getattr(args, "tpose_threshold", 5.0):
+                    print("[agent] OK — within threshold.")
+                else:
+                    print(f"[agent] Residual max={max_new:.2f}° — may need manual tuning.")
+                return
+
         from general_motion_retargeting import GeneralMotionRetargeting as GMR
 
         if tpose_spec is None or not args.tpose_motion:
