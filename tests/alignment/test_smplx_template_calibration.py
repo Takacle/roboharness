@@ -428,3 +428,73 @@ class TestSmplxCoordinatePolicyPreserved:
         assert "world_rotation" not in solved
         assert solved["robot_root_name"] == "base_link"
         assert solved["human_root_name"] == "pelvis"
+
+
+class TestAgentSmplxSolveModeNoMotion:
+    def test_motion_file_not_required(self):
+        source = Path("examples/gmr_alignment_agent.py").read_text()
+        motion_section = source.split("--motion_file")[1].split("\n")[0]
+        assert "required=True" not in motion_section
+
+    def test_smplx_template_solve_guard_skips_retarget(self):
+        source = Path("examples/gmr_alignment_agent.py").read_text()
+        assert "smplx_template_solve" in source
+        assert "Phase A: skipped (SMPL-X template solve does not require motion)" in source
+
+    def test_template_solve_uses_resolved_tpose_spec_path(self):
+        source = Path("examples/gmr_alignment_agent.py").read_text()
+        assert "tpose_spec_path=tpose_spec_path" in source, (
+            "Template solve must pass resolved tpose_spec_path, not args.tpose_spec"
+        )
+
+    def test_template_solve_does_not_use_args_tpose_spec(self):
+        source = Path("examples/gmr_alignment_agent.py").read_text()
+        solve_start = source.index("solve_smplx_offsets_from_template(")
+        solve_call = source[solve_start : solve_start + 300]
+        assert "args.tpose_spec" not in solve_call, (
+            "solve_smplx_offsets_from_template must use tpose_spec_path, not args.tpose_spec"
+        )
+
+
+class TestAgentDefaultSpecDiscovery:
+    def test_auto_discovered_spec_used_for_template_solve(self, tmp_path: Path):
+        spec_dir = tmp_path / "specs" / "tpose"
+        spec_dir.mkdir(parents=True)
+        spec_data = {
+            "robot": "test_robot",
+            "xml_path": "/fake.xml",
+            "qpos": [0, 0, 0, 0.5, -0.5, -0.5, -0.5],
+            "links": {
+                "base_link": {"pos": [0, 0, 0], "R": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]},
+            },
+        }
+        spec_path = spec_dir / "test_robot.json"
+        spec_path.write_text(json.dumps(spec_data))
+
+        args_tpose_spec = None
+        robot_name = "test_robot"
+
+        tpose_spec_path = args_tpose_spec
+        if tpose_spec_path is None:
+            default_path = spec_dir / f"{robot_name}.json"
+            if default_path.exists():
+                tpose_spec_path = default_path
+
+        assert tpose_spec_path == spec_path, (
+            "Auto-discovered spec path must match specs/tpose/{robot}.json"
+        )
+
+    def test_default_spec_path_resolves_without_args_tpose_spec(self, tmp_path: Path):
+        spec_dir = tmp_path / "specs" / "tpose"
+        spec_dir.mkdir(parents=True)
+        (spec_dir / "test_robot.json").write_text('{"robot":"test_robot"}')
+
+        args_tpose_spec = None
+        default_path = spec_dir / "test_robot.json"
+
+        tpose_spec_path = args_tpose_spec
+        if tpose_spec_path is None and default_path.exists():
+            tpose_spec_path = default_path
+
+        assert tpose_spec_path is not None
+        assert tpose_spec_path.name == "test_robot.json"

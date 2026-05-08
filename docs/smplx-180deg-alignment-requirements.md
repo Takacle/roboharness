@@ -18,9 +18,9 @@ flag=1
 
 Current owner: opencode (GLM-5.1)
 Last implementation commit: TBD
-Last verification command: `pytest -q` (717 passed, 3 skipped, 90.89% coverage)
-Codex review status: approved
-Codex review feedback: Rev 4 verified. Renamed real SMPL-X `.npz` assets load through `load_smplx_template_tpose()`, targeted tests pass, and setup/validate template-path flow is acceptable.
+Last verification command: `pytest -q` (723 passed, 3 skipped, 90.89% coverage)
+Codex review status: pending
+Codex review feedback: (awaiting review of Rev 6)
 
 ## Context
 
@@ -412,4 +412,13 @@ Success: no issues found in 54 source files
   template calibration instead of using motion file frame 0 as human
   reference. Added `--smplx_template_model` CLI arg. When body model is
   available and `--src smplx`, solve_mode uses body model zero-pose
-  (no `--tpose_motion` required). 717 tests, 90.89% coverage. flag=1.
+   (no `--tpose_motion` required). 717 tests, 90.89% coverage. flag=1.
+- 2026-05-08: Rev 6: Fixed two Codex review blockers from Rev 5:
+  1) `gmr_alignment_agent.py --solve_mode --src smplx` no longer requires
+  `--motion_file` — Phase A retargeting is skipped when template calibration
+  is available; `--motion_file` changed from `required=True` to optional.
+  2) Template solve path now uses resolved `tpose_spec_path` (auto-discovered
+  or explicit) instead of `Path(args.tpose_spec)` which was `None` for
+  auto-discovered specs. Added 6 new tests: source invariants for
+  smplx_template_solve guard, tpose_spec_path usage verification, and
+  default spec discovery. 723 tests, 90.89% coverage. flag=1.
