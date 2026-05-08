@@ -3,8 +3,8 @@
 Demonstrates how roboharness checkpoint capture enables curriculum learning
 on MuJoCo Reacher-v4:
 
-  Phase 0 (ep 0–49):   train from random initial state
-  Phase 1 (ep 50–119): reset from states saved at midpoint checkpoints (arm near target)
+  Phase 0 (ep 0-49):   train from random initial state
+  Phase 1 (ep 50-119): reset from states saved at midpoint checkpoints (arm near target)
   Phase 2 (ep 120+):   same pool, policy should be converging
 
 Key roboharness hooks used:
@@ -30,7 +30,6 @@ import gymnasium as gym
 import numpy as np
 
 from roboharness.wrappers import RobotHarnessWrapper
-
 
 # ---------------------------------------------------------------------------
 # State pool
@@ -107,7 +106,7 @@ class GaussianPolicy:
                 ret_arr = (ret_arr - ret_arr.mean()) / (ret_arr.std() + 1e-8)
             total_return += float(traj["rewards"][0]) if traj["rewards"] else 0.0
 
-            for obs, action, G_t in zip(traj["obs"], traj["actions"], ret_arr):
+            for obs, action, G_t in zip(traj["obs"], traj["actions"], ret_arr, strict=True):
                 h, mean = self._forward(obs)
                 std = np.exp(self.log_std)
                 eps = (action - mean) / std

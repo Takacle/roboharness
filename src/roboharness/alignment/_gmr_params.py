@@ -11,6 +11,7 @@ from __future__ import annotations
 import importlib.util
 import sys
 from pathlib import Path
+from types import ModuleType
 
 _BLOCKED_MODS = ("general_motion_retargeting",)
 
@@ -29,18 +30,18 @@ def load_gmr_params(gmr_root: Path) -> object:
         raise ImportError(f"Cannot load spec from {params_path}")
     # Prevent GMR's __init__.py from being auto-imported when params.py does
     # ``from . import ...``.
-    saved: dict[str, object] = {}
+    saved: dict[str, ModuleType | None] = {}
     for name in _BLOCKED_MODS:
         if name not in sys.modules:
             saved[name] = sys.modules.get(name)
-            sys.modules[name] = type(sys)(name)  # placeholder
+            sys.modules[name] = type(sys)(name)  # type: ignore[assignment]
     try:
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
     finally:
         for name in _BLOCKED_MODS:
             if name in saved:
-                sys.modules[name] = saved[name]
+                sys.modules[name] = saved[name]  # type: ignore[assignment]
             elif name in sys.modules and isinstance(sys.modules[name], type(sys)):
                 del sys.modules[name]
     return module

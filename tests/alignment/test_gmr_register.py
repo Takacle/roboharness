@@ -67,15 +67,25 @@ class TestRegisterInParams:
         params_path = gmr_root / "general_motion_retargeting" / "params.py"
         original = params_path.read_text()
         register_in_params(
-            gmr_root, "new_robot", "new_robot.xml", "pelvis",
-            2.5, ["smplx"], dry_run=True,
+            gmr_root,
+            "new_robot",
+            "new_robot.xml",
+            "pelvis",
+            2.5,
+            ["smplx"],
+            dry_run=True,
         )
         assert params_path.read_text() == original
 
     def test_adds_robot_xml(self, gmr_root):
         register_in_params(
-            gmr_root, "new_robot", "new_robot.xml", "pelvis",
-            2.5, ["smplx"], dry_run=False,
+            gmr_root,
+            "new_robot",
+            "new_robot.xml",
+            "pelvis",
+            2.5,
+            ["smplx"],
+            dry_run=False,
         )
         text = (gmr_root / "general_motion_retargeting" / "params.py").read_text()
         assert '"new_robot"' in text
@@ -84,30 +94,50 @@ class TestRegisterInParams:
 
     def test_syntax_valid_after_insert(self, gmr_root):
         register_in_params(
-            gmr_root, "new_robot", "new_robot.xml", "pelvis",
-            2.5, ["smplx", "bvh"], dry_run=False,
+            gmr_root,
+            "new_robot",
+            "new_robot.xml",
+            "pelvis",
+            2.5,
+            ["smplx", "bvh"],
+            dry_run=False,
         )
         text = (gmr_root / "general_motion_retargeting" / "params.py").read_text()
         compile(text, "params.py", "exec")
 
     def test_creates_backup(self, gmr_root):
         register_in_params(
-            gmr_root, "new_robot", "new_robot.xml", "pelvis",
-            2.5, ["smplx"], dry_run=False,
+            gmr_root,
+            "new_robot",
+            "new_robot.xml",
+            "pelvis",
+            2.5,
+            ["smplx"],
+            dry_run=False,
         )
         assert (gmr_root / "general_motion_retargeting" / "params.py.bak").exists()
 
     def test_skip_existing_key(self, gmr_root):
         result = register_in_params(
-            gmr_root, "unitree_g1", "g1.xml", "pelvis",
-            2.5, ["smplx"], dry_run=True,
+            gmr_root,
+            "unitree_g1",
+            "g1.xml",
+            "pelvis",
+            2.5,
+            ["smplx"],
+            dry_run=True,
         )
         assert any("SKIP" in line for line in result)
 
     def test_multiple_formats(self, gmr_root):
         register_in_params(
-            gmr_root, "new_robot", "new_robot.xml", "pelvis",
-            2.5, ["smplx", "bvh"], dry_run=False,
+            gmr_root,
+            "new_robot",
+            "new_robot.xml",
+            "pelvis",
+            2.5,
+            ["smplx", "bvh"],
+            dry_run=False,
         )
         text = (gmr_root / "general_motion_retargeting" / "params.py").read_text()
         assert "smplx_to_new_robot.json" in text
@@ -115,19 +145,29 @@ class TestRegisterInParams:
 
     def test_nested_ik_config_inserted_in_correct_block(self, gmr_root):
         register_in_params(
-            gmr_root, "new_robot", "new_robot.xml", "pelvis",
-            2.5, ["smplx", "bvh"], dry_run=False,
+            gmr_root,
+            "new_robot",
+            "new_robot.xml",
+            "pelvis",
+            2.5,
+            ["smplx", "bvh"],
+            dry_run=False,
         )
         text = (gmr_root / "general_motion_retargeting" / "params.py").read_text()
         smplx_block = text.split('"smplx": {')[1].split('"bvh": {')[0]
-        assert 'smplx_to_new_robot.json' in smplx_block
+        assert "smplx_to_new_robot.json" in smplx_block
         bvh_block = text.split('"bvh": {')[1].split('"fbx": {')[0]
-        assert 'bvh_to_new_robot.json' in bvh_block
+        assert "bvh_to_new_robot.json" in bvh_block
 
     def test_nested_skip_already_in_block(self, gmr_root):
         result = register_in_params(
-            gmr_root, "unitree_g1", "g1.xml", "pelvis",
-            2.5, ["smplx"], dry_run=True,
+            gmr_root,
+            "unitree_g1",
+            "g1.xml",
+            "pelvis",
+            2.5,
+            ["smplx"],
+            dry_run=True,
         )
         assert any("IK_CONFIG_DICT[smplx]" in line and "SKIP" in line for line in result)
 

@@ -6,25 +6,25 @@ quaternion solving → validation.
 Usage examples::
 
     # Minimal (generate config + register in params.py + update scripts)
-    python scripts/setup_robot.py --robot my_robot \\
-        --xml assets/my_robot/robot.xml \\
-        --formats smplx bvh \\
+    python scripts/setup_robot.py --robot my_robot \
+        --xml $GMR_ROOT/assets/my_robot/robot.xml \
+        --formats smplx bvh \
         --auto_register --update_scripts
 
     # Full pipeline with T-pose alignment
-    python scripts/setup_robot.py --robot unitree_h1 \\
-        --tpose_motion /path/to/tpose.bvh \\
+    python scripts/setup_robot.py --robot unitree_h1 \
+        --tpose_motion /path/to/tpose.bvh \
         --auto_register --update_scripts
 
     # Clone from existing robot (same format only)
-    python scripts/setup_robot.py --robot my_robot \\
-        --clone_from unitree_h1 \\
-        --xml assets/my_robot/robot.xml \\
+    python scripts/setup_robot.py --robot my_robot \
+        --clone_from unitree_h1 \
+        --xml $GMR_ROOT/assets/my_robot/robot.xml \
         --formats smplx
 
     # Interactive mode (prompts for unmatched body mappings)
-    python scripts/setup_robot.py --robot my_robot \\
-        --xml assets/my_robot/robot.xml --interactive
+    python scripts/setup_robot.py --robot my_robot \
+        --xml $GMR_ROOT/assets/my_robot/robot.xml --interactive
 
 Steps performed:
 
@@ -53,7 +53,6 @@ from roboharness.alignment._gmr_params import load_gmr_params  # noqa: E402
 from roboharness.alignment._gmr_path import find_gmr_root  # noqa: E402
 from roboharness.alignment.body_matcher import match_bodies  # noqa: E402
 from roboharness.alignment.config_gen import (  # noqa: E402
-    _default_ik_config_dir,
     clone_ik_config,
     generate_ik_config,
     write_ik_config,
@@ -67,6 +66,10 @@ from roboharness.alignment.orientation_aligner import (  # noqa: E402
     parse_world_rotation_arg,
 )
 from roboharness.alignment.skeleton_maps import get_skeleton  # noqa: E402
+from roboharness.alignment.smplx_offset_solver import (  # noqa: E402
+    solve_smplx_offsets_from_template,
+    write_solved_config,
+)
 
 GMR_ROOT = find_gmr_root()
 
@@ -92,13 +95,22 @@ def _resolve_xml(args: argparse.Namespace) -> Path:
             sys.exit(1)
         asset_dir = (GMR_ROOT / "assets" / args.robot).resolve()
         try:
-            xml_path.relative_to(asset_dir)
+            rel = xml_path.relative_to(asset_dir)
         except ValueError:
             print(
                 f"[setup] ERROR: --xml must be inside {asset_dir}/.\n"
                 f"  Provided path: {xml_path}\n"
                 f"  Move the XML (and its mesh assets) into {asset_dir}/ "
                 f"before running setup, or omit --xml to auto-detect."
+            )
+            sys.exit(1)
+        if rel.parent != Path():
+            print(
+                f"[setup] ERROR: --xml must be directly inside {asset_dir}/, "
+                f"not a subdirectory.\n"
+                f"  Provided path: {xml_path}\n"
+                f"  Nested paths like {asset_dir.name}/subdir/model.xml are not "
+                f"supported because params.py registers only the filename."
             )
             sys.exit(1)
         return xml_path
@@ -139,24 +151,45 @@ def _interactive_resolve(result, skeleton, robot_body_names):
     return result
 
 
-def _solve_smplx_offsets(robot: str) -> bool:
-    offsets_script = GMR_ROOT / "scripts" / "compute_smplx_tpose_offsets.py"
-    if not offsets_script.exists():
-        print(f"[setup] ERROR: {offsets_script} not found.")
-        return False
-    cmd = [sys.executable, str(offsets_script), "--robot", robot, "--generate"]
-    result = subprocess.run(cmd, capture_output=False, text=True)
-    if result.returncode != 0:
-        print("[setup] ERROR: SMPL-X offset computation failed.")
-        return False
+def _solve_smplx_offsets(
+    robot: str,
+    tpose_spec_path: Path,
+    body_model_root: Path | None = None,
+) -> bool:
     params = load_gmr_params(GMR_ROOT)
     ik_dict = getattr(params, "IK_CONFIG_DICT", {})
     config_path = Path(str(ik_dict.get("smplx", {}).get(robot, "")))
-    computed_path = config_path.parent / config_path.name.replace(".json", "_computed.json")
-    if computed_path.exists() and config_path.exists():
-        config_path.write_text(computed_path.read_text())
-        computed_path.unlink()
-        print(f"[setup] Replaced {config_path.name} with computed offsets.")
+    if not config_path.exists():
+        offsets_script = GMR_ROOT / "scripts" / "compute_smplx_tpose_offsets.py"
+        if offsets_script.exists():
+            cmd = [sys.executable, str(offsets_script), "--robot", robot, "--generate"]
+            result = subprocess.run(cmd, capture_output=False, text=True)
+            if result.returncode != 0:
+                print("[setup] ERROR: SMPL-X offset computation failed.")
+                return False
+            params = load_gmr_params(GMR_ROOT)
+            ik_dict = getattr(params, "IK_CONFIG_DICT", {})
+            config_path = Path(str(ik_dict.get("smplx", {}).get(robot, "")))
+        else:
+            print(f"[setup] ERROR: IK config not found at {config_path}")
+            return False
+
+    if not tpose_spec_path.exists():
+        print(f"[setup] ERROR: T-pose spec not found at {tpose_spec_path}")
+        return False
+
+    try:
+        solved = solve_smplx_offsets_from_template(
+            ik_config_path=config_path,
+            tpose_spec_path=tpose_spec_path,
+            body_model_path=body_model_root,
+        )
+    except Exception as exc:
+        print(f"[setup] ERROR: template offset solving failed: {exc}")
+        return False
+
+    write_solved_config(solved, config_path)
+    print(f"[setup] Solved SMPL-X offsets from template → {config_path.name}")
     return True
 
 
@@ -253,9 +286,19 @@ def main() -> None:
     parser.add_argument("--src", default="bvh", choices=["bvh", "smplx", "fbx_offline"])
     parser.add_argument("--bvh_format", default="auto", choices=["auto", "lafan1", "soma"])
     parser.add_argument("--world_rot", default="", help="world_rotation (e.g. '90,0,0,1')")
+    parser.add_argument(
+        "--smplx_template_model",
+        default=None,
+        help="Path to SMPLX body model *directory* (e.g. .../body_models, "
+        "which must contain a smplx/ subfolder with SMPLX_MALE.npz). "
+        "Defaults to GMR/assets/body_models when it exists.",
+    )
     parser.add_argument("--output_dir", default=str(_PROJECT / "specs" / "tpose"))
     parser.add_argument("--skip_stage", action="store_true", help="Skip T-pose staging")
     parser.add_argument("--skip_solve", action="store_true", help="Skip quaternion solving")
+    parser.add_argument(
+        "--skip_validate", action="store_true", help="Skip validation after solving"
+    )
     parser.add_argument("--dry_run", action="store_true")
     args = parser.parse_args()
 
@@ -275,6 +318,20 @@ def main() -> None:
 
     if args.tpose_src not in args.formats:
         args.formats.append(args.tpose_src)
+
+    _DEFAULT_SMPLX_BODY_MODEL = GMR_ROOT / "assets" / "body_models"
+    smplx_body_model_root: Path | None = None
+    if args.smplx_template_model:
+        smplx_body_model_root = Path(args.smplx_template_model).resolve()
+        if not smplx_body_model_root.exists():
+            print(f"[setup] ERROR: --smplx_template_model path not found: {smplx_body_model_root}")
+            sys.exit(1)
+    elif _DEFAULT_SMPLX_BODY_MODEL.exists():
+        smplx_body_model_root = _DEFAULT_SMPLX_BODY_MODEL
+
+    smplx_template_available = (
+        args.src == "smplx" or args.tpose_src == "smplx"
+    ) and smplx_body_model_root is not None
 
     print(f"\n{'=' * 60}")
     print(f"Setup Robot: {args.robot}")
@@ -319,12 +376,18 @@ def main() -> None:
                 )
             else:
                 new_body_map = _compute_clone_mapping(args.clone_from, body_names, root_body, fmt)
-                dest_dir = _default_ik_config_dir()
-                clone_dest = dest_dir / f"{fmt}_to_{args.robot}.json"
+                ik_dir = GMR_ROOT / "general_motion_retargeting" / "ik_configs"
+                clone_dest = ik_dir / f"{fmt}_to_{args.robot}.json"
                 if args.dry_run:
                     print(f"[setup] (dry_run — would clone config → {clone_dest})")
                 else:
-                    path = clone_ik_config(src_config_path, new_body_map, args.robot, fmt)
+                    path = clone_ik_config(
+                        src_config_path,
+                        new_body_map,
+                        args.robot,
+                        fmt,
+                        output_dir=ik_dir,
+                    )
                     print(f"[setup] Cloned config → {path}")
                     config_paths.append(path)
                 continue
@@ -365,13 +428,13 @@ def main() -> None:
         elif args.world_rot == "":
             pass  # auto-detection already ran via xml_path
 
-        dest_dir = _default_ik_config_dir()
-        dest_path = dest_dir / f"{fmt}_to_{args.robot}.json"
+        ik_dir = GMR_ROOT / "general_motion_retargeting" / "ik_configs"
+        dest_path = ik_dir / f"{fmt}_to_{args.robot}.json"
         if args.dry_run:
             print(f"[setup] (dry_run — would write config → {dest_path})")
             _print_config_summary(config)
         else:
-            path = write_ik_config(config, args.robot, fmt)
+            path = write_ik_config(config, args.robot, fmt, output_dir=ik_dir)
             print(f"[setup] Generated config → {path}")
             config_paths.append(path)
 
@@ -412,6 +475,8 @@ def main() -> None:
             str(_HERE / "stage_tpose.py"),
             "--robot",
             args.robot,
+            "--src",
+            args.tpose_src,
             "--preset",
             args.tpose_preset,
             "--output_dir",
@@ -428,12 +493,15 @@ def main() -> None:
         print(result.stdout.strip().split("\n")[-3:])
 
     # ── Step 5: Solve quaternions ──
-    if args.tpose_motion and not args.skip_solve:
+    spec_path = Path(args.output_dir) / f"{args.robot}.json"
+    should_solve = args.tpose_motion or (smplx_template_available and spec_path.exists())
+    if should_solve and not args.skip_solve:
         print("\n[setup] Step 5: Solving IK config quaternions...")
-        spec_path = Path(args.output_dir) / f"{args.robot}.json"
 
-        if args.tpose_src == "smplx":
-            solve_result = _solve_smplx_offsets(args.robot)
+        if args.tpose_src == "smplx" or (args.src == "smplx" and smplx_template_available):
+            solve_result = _solve_smplx_offsets(
+                args.robot, spec_path, body_model_root=smplx_body_model_root
+            )
         else:
             solve_result = _solve_via_agent(args, spec_path)
 
@@ -441,12 +509,8 @@ def main() -> None:
             return
 
     # ── Step 6: Validate ──
-    should_validate = args.tpose_motion and not args.skip_solve
-    if should_validate and args.tpose_src == "smplx":
-        print(
-            "\n[setup] Step 6: Skipping (SMPL-X offsets computed via MuJoCo FK -- already precise)."
-        )
-    elif should_validate:
+    should_validate = should_solve and not args.skip_solve and not args.skip_validate
+    if should_validate:
         params = load_gmr_params(GMR_ROOT)
         ik_dict = getattr(params, "IK_CONFIG_DICT", {})
         ik_config_src = ik_dict.get(args.tpose_src, {})
@@ -465,8 +529,6 @@ def main() -> None:
                 str(_PROJECT / "examples" / "gmr_tpose_validate.py"),
                 "--robot",
                 args.robot,
-                "--tpose_motion",
-                args.tpose_motion,
                 "--src",
                 args.tpose_src,
                 "--bvh_format",
@@ -476,6 +538,12 @@ def main() -> None:
                 "--threshold",
                 "5.0",
             ]
+            if smplx_template_available and not args.tpose_motion:
+                vcmd.append("--use_smplx_template")
+                if smplx_body_model_root is not None:
+                    vcmd.extend(["--smplx_template_model", str(smplx_body_model_root)])
+            else:
+                vcmd.extend(["--tpose_motion", args.tpose_motion])
             vr = subprocess.run(vcmd, capture_output=True, text=True)
             print(vr.stdout)
             if vr.returncode != 0:

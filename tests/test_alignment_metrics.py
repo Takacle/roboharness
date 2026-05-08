@@ -21,6 +21,7 @@ mujoco = pytest.importorskip("mujoco")
 from roboharness._math_utils import rotation_matrix_to_axis_angle  # noqa: E402
 from roboharness.alignment.metrics import (  # noqa: E402
     compute_deviations,
+    compute_direct_patch,
     load_tpose_spec,
     total_deviation,
     worst_k,
@@ -241,3 +242,59 @@ def test_load_tpose_spec_rejects_bad_link(tmp_path: Path, xml_file: Path) -> Non
     path.write_text(json.dumps(spec))
     with pytest.raises(ValueError, match="R must be 3x3"):
         load_tpose_spec(path)
+
+
+# ---- compute_direct_patch ----
+
+
+def test_compute_direct_patch_identity_offset(xml_file: Path) -> None:
+    """When human data matches the tpose spec exactly, offsets should be identity."""
+    from scipy.spatial.transform import Rotation
+
+    qpos = np.array([0.0])
+    spec = _spec_from_qpos(xml_file, qpos, ["arm"])
+    R_arm = np.asarray(spec["links"]["arm"]["R"], dtype=np.float64)
+    q_arm = Rotation.from_matrix(R_arm).as_quat(scalar_first=True).tolist()
+
+    human_data = {"arm_bone": (np.zeros(3).tolist(), q_arm)}
+    config = {
+        "ik_match_table1": {"arm": ["arm_bone", 1.0, 1.0, [0, 0, 0], [1, 0, 0, 0]]},
+        "ik_match_table2": {"arm": ["arm_bone", 1.0, 1.0, [0, 0, 0], [1, 0, 0, 0]]},
+    }
+    tpose_spec = {"links": {"arm": {"R": R_arm.tolist()}}}
+
+    patch = compute_direct_patch(human_data, config, tpose_spec)
+    assert "ik_match_table1" in patch
+    assert "arm" in patch["ik_match_table1"]
+    assert patch["ik_match_table1"]["arm"]["mode"] == "set"
+
+
+def test_compute_direct_patch_preserves_joints() -> None:
+    from scipy.spatial.transform import Rotation
+
+    R_human = Rotation.from_euler("z", 45, degrees=True).as_matrix()
+    q_human = Rotation.from_matrix(R_human).as_quat(scalar_first=True).tolist()
+    R_expected = Rotation.from_euler("z", 90, degrees=True).as_matrix()
+
+    human_data = {"bone_a": (np.zeros(3).tolist(), q_human)}
+    config = {
+        "ik_match_table1": {
+            "j1": ["bone_a", 1.0, 1.0, [0, 0, 0], [1, 0, 0, 0]],
+            "j2": ["bone_missing", 1.0, 1.0, [0, 0, 0], [1, 0, 0, 0]],
+        },
+        "ik_match_table2": {"j1": ["bone_a", 1.0, 1.0, [0, 0, 0], [1, 0, 0, 0]]},
+    }
+    tpose_spec = {"links": {"j1": {"R": R_expected.tolist()}}}
+
+    patch = compute_direct_patch(human_data, config, tpose_spec, preserve={"j2"})
+
+    assert "j1" in patch["ik_match_table1"]
+    assert "j2" not in patch["ik_match_table1"]
+    q_offset = patch["ik_match_table1"]["j1"]["quat"]
+    r_offset = Rotation.from_quat(q_offset, scalar_first=True)
+    expected_offset = Rotation.from_matrix(R_human).inv() * Rotation.from_matrix(R_expected)
+    assert np.allclose(
+        r_offset.as_quat(scalar_first=True),
+        expected_offset.as_quat(scalar_first=True),
+        atol=1e-6,
+    )

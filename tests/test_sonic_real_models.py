@@ -1,28 +1,23 @@
-"""Real-model SONIC validation against the published HuggingFace ONNX artifacts."""
+"""Real-model SONIC validation against the published HuggingFace ONNX artifacts.
+
+These tests download ONNX models from HuggingFace and require network access.
+They are skipped by default unless ``ROBOHARNESS_RUN_REAL_SONIC=1`` is set.
+"""
 
 from __future__ import annotations
+
+import os
 
 import numpy as np
 import pytest
 
+_RUN_REAL = os.environ.get("ROBOHARNESS_RUN_REAL_SONIC", "") == "1"
+_skip_reason = "Set ROBOHARNESS_RUN_REAL_SONIC=1 to run real SONIC model tests (requires network)"
+
 pytest.importorskip("huggingface_hub", reason="huggingface_hub not installed")
 pytest.importorskip("onnxruntime", reason="onnxruntime not installed")
 
-from roboharness.robots.unitree_g1.locomotion import (
-    SONIC_DECODER_FILE,
-    SONIC_DECODER_INPUT_DIM,
-    SONIC_DECODER_OUTPUT_DIM,
-    SONIC_ENCODER_FILE,
-    SONIC_ENCODER_INPUT_DIM,
-    SONIC_HF_REPO,
-    SONIC_LATENT_DIM,
-    SONIC_PLANNER_FILE,
-    SONIC_TRACKING_DEFAULT_ANGLES,
-    MotionClip,
-    SonicLocomotionController,
-    SonicMode,
-    _load_onnx_session,
-)
+import roboharness.robots.unitree_g1.locomotion as _loc  # noqa: E402
 
 
 def _yaw_to_sixd(yaw: float) -> np.ndarray:
@@ -32,7 +27,7 @@ def _yaw_to_sixd(yaw: float) -> np.ndarray:
     return np.array([cy, -sy, sy, cy, 0.0, 0.0], dtype=np.float32)
 
 
-def _make_tracking_clip(num_frames: int = 80) -> MotionClip:
+def _make_tracking_clip(num_frames: int = 80) -> _loc.MotionClip:
     t = np.linspace(0.0, 1.0, num_frames, dtype=np.float32)
 
     joint_positions = np.zeros((num_frames, 29), dtype=np.float32)
@@ -48,7 +43,7 @@ def _make_tracking_clip(num_frames: int = 80) -> MotionClip:
     root_height = np.full(num_frames, 0.74, dtype=np.float32)
     root_rotation_6d = np.stack([_yaw_to_sixd(0.15 * float(v)) for v in t], axis=0)
 
-    return MotionClip(
+    return _loc.MotionClip(
         joint_positions=joint_positions,
         joint_velocities=joint_velocities,
         root_height=root_height,
@@ -65,7 +60,7 @@ def _make_state(step: int = 0) -> dict[str, np.ndarray]:
     qpos[2] = 0.74
     qpos[3] = np.cos(half_yaw)
     qpos[6] = np.sin(half_yaw)
-    qpos[7:36] = SONIC_TRACKING_DEFAULT_ANGLES + (
+    qpos[7:36] = _loc.SONIC_TRACKING_DEFAULT_ANGLES + (
         0.01 * np.sin(0.2 * step + np.arange(29, dtype=np.float32) * 0.1)
     )
 
@@ -76,10 +71,11 @@ def _make_state(step: int = 0) -> dict[str, np.ndarray]:
 
 
 @pytest.mark.slow
+@pytest.mark.skipif(not _RUN_REAL, reason=_skip_reason)
 def test_sonic_real_model_signatures_match_repo_contract() -> None:
-    encoder = _load_onnx_session(SONIC_HF_REPO, SONIC_ENCODER_FILE)
-    decoder = _load_onnx_session(SONIC_HF_REPO, SONIC_DECODER_FILE)
-    planner = _load_onnx_session(SONIC_HF_REPO, SONIC_PLANNER_FILE)
+    encoder = _loc._load_onnx_session(_loc.SONIC_HF_REPO, _loc.SONIC_ENCODER_FILE)
+    decoder = _loc._load_onnx_session(_loc.SONIC_HF_REPO, _loc.SONIC_DECODER_FILE)
+    planner = _loc._load_onnx_session(_loc.SONIC_HF_REPO, _loc.SONIC_PLANNER_FILE)
 
     enc_input = encoder.get_inputs()[0]
     enc_output = encoder.get_outputs()[0]
@@ -89,14 +85,14 @@ def test_sonic_real_model_signatures_match_repo_contract() -> None:
     planner_outputs = [item.name for item in planner.get_outputs()]
 
     assert enc_input.name == "obs_dict"
-    assert enc_input.shape == [1, SONIC_ENCODER_INPUT_DIM]
+    assert enc_input.shape == [1, _loc.SONIC_ENCODER_INPUT_DIM]
     assert enc_output.name == "encoded_tokens"
-    assert enc_output.shape == [1, SONIC_LATENT_DIM]
+    assert enc_output.shape == [1, _loc.SONIC_LATENT_DIM]
 
     assert dec_input.name == "obs_dict"
-    assert dec_input.shape == [1, SONIC_DECODER_INPUT_DIM]
+    assert dec_input.shape == [1, _loc.SONIC_DECODER_INPUT_DIM]
     assert dec_output.name == "action"
-    assert dec_output.shape == [1, SONIC_DECODER_OUTPUT_DIM]
+    assert dec_output.shape == [1, _loc.SONIC_DECODER_OUTPUT_DIM]
 
     assert "context_mujoco_qpos" in planner_inputs
     assert "target_vel" in planner_inputs
@@ -104,12 +100,13 @@ def test_sonic_real_model_signatures_match_repo_contract() -> None:
 
 
 @pytest.mark.slow
+@pytest.mark.skipif(not _RUN_REAL, reason=_skip_reason)
 def test_sonic_real_planner_compute_runs() -> None:
-    controller = SonicLocomotionController()
+    controller = _loc.SonicLocomotionController()
     state = _make_state()
 
     action = controller.compute(
-        command={"velocity": [0.3, 0.0, 0.0], "mode": SonicMode.WALK},
+        command={"velocity": [0.3, 0.0, 0.0], "mode": _loc.SonicMode.WALK},
         state=state,
     )
 
@@ -118,8 +115,9 @@ def test_sonic_real_planner_compute_runs() -> None:
 
 
 @pytest.mark.slow
+@pytest.mark.skipif(not _RUN_REAL, reason=_skip_reason)
 def test_sonic_real_tracking_compute_runs_and_advances() -> None:
-    controller = SonicLocomotionController()
+    controller = _loc.SonicLocomotionController()
     controller.set_tracking_clip(_make_tracking_clip())
 
     outputs = []

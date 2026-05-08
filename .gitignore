@@ -41,3 +41,6 @@ MUJOCO_LOG.TXT
 # OS
 .DS_Store
 Thumbs.db
+agent_output/
+output/
+alignment_output/

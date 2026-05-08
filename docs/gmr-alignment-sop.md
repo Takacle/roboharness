@@ -270,7 +270,7 @@ SMPL-X 源格式的 T-pose spec 有专用辅助函数：
 ### 手动覆盖
 
 `gmr_alignment_agent.py --world_rot "angle,ax,ay,az"` 会覆盖自动检测值。
-格式为空格分隔的角度（度）和旋转轴分量。
+格式为逗号分隔：`"angle,axis_x,axis_y,axis_z"`（度和轴分量），例如 `"90,0,0,1"`。
 
 ---
 

@@ -983,12 +983,6 @@ def main() -> None:
         )
         human_ref = scaled_human_reference(retargeter, tpose_frame)
 
-        if args.src in ("smplx",):
-            from roboharness.alignment.orientation_aligner import apply_smplx_base_rotation
-
-            tpose_spec = apply_smplx_base_rotation(tpose_spec)
-            print("[agent] Applied SMPL-X base rotation to tpose_spec")
-
         if args.world_rot:
             from scipy.spatial.transform import Rotation as R
 

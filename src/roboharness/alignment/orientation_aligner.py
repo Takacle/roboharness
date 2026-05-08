@@ -45,7 +45,7 @@ def _parse_quat(s: str) -> np.ndarray:
 
 def _quat_rotate(q: np.ndarray, v: np.ndarray) -> np.ndarray:
     """Rotate vector *v* by quaternion *q* (xyzw)."""
-    return R.from_quat(q).apply(v)
+    return R.from_quat(q).apply(v)  # type: ignore[no-any-return]
 
 
 def _resolve_includes(xml_elem: ET.Element, base_dir: Path) -> None:

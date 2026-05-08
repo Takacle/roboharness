@@ -99,9 +99,7 @@ def generate_ik_config(
                         parent_role = r
                         break
                 if parent_role and parent_role in match.mapping:
-                    scale_table[parent_joint] = skeleton.scale_defaults.get(
-                        parent_joint, 0.9
-                    )
+                    scale_table[parent_joint] = skeleton.scale_defaults.get(parent_joint, 0.9)
 
     config: dict = {
         "robot_root_name": root_body,

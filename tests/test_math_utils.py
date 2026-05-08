@@ -88,9 +88,11 @@ class TestRotationMatrixToAxisAngle:
     def test_90_deg_z(self) -> None:
         theta = np.pi / 2
         R = np.array(
-            [[np.cos(theta), -np.sin(theta), 0.0],
-             [np.sin(theta), np.cos(theta), 0.0],
-             [0.0, 0.0, 1.0]],
+            [
+                [np.cos(theta), -np.sin(theta), 0.0],
+                [np.sin(theta), np.cos(theta), 0.0],
+                [0.0, 0.0, 1.0],
+            ],
         )
         axis, angle = rotation_matrix_to_axis_angle(R)
         assert angle == pytest.approx(theta)
@@ -102,13 +104,19 @@ class TestRotationMatrixToAxisAngle:
         assert angle == pytest.approx(np.pi)
         assert np.allclose(np.abs(axis), [1.0, 0.0, 0.0], atol=1e-6)
 
+    def test_180_deg_diagonal(self) -> None:
+        v = np.array([1.0, 1.0, 1.0]) / np.sqrt(3.0)
+        K = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+        R = np.eye(3) + 2.0 * (K @ K)
+        axis, angle = rotation_matrix_to_axis_angle(R)
+        assert angle == pytest.approx(np.pi, abs=1e-6)
+        assert np.allclose(np.abs(axis), np.abs(v), atol=1e-6)
+
     def test_near_identity(self) -> None:
         # 1e-6 rad rotation around Z — angle well below 1e-8 rad threshold
         eps = 1e-9
         R = np.array(
-            [[np.cos(eps), -np.sin(eps), 0.0],
-             [np.sin(eps), np.cos(eps), 0.0],
-             [0.0, 0.0, 1.0]],
+            [[np.cos(eps), -np.sin(eps), 0.0], [np.sin(eps), np.cos(eps), 0.0], [0.0, 0.0, 1.0]],
         )
         axis, angle = rotation_matrix_to_axis_angle(R)
         assert angle == 0.0
@@ -123,9 +131,11 @@ class TestRotationMatrixToQuat:
     def test_90_deg_z(self) -> None:
         theta = np.pi / 2
         R = np.array(
-            [[np.cos(theta), -np.sin(theta), 0.0],
-             [np.sin(theta), np.cos(theta), 0.0],
-             [0.0, 0.0, 1.0]],
+            [
+                [np.cos(theta), -np.sin(theta), 0.0],
+                [np.sin(theta), np.cos(theta), 0.0],
+                [0.0, 0.0, 1.0],
+            ],
         )
         q = rotation_matrix_to_quat(R)
         assert len(q) == 4

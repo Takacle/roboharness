@@ -18,7 +18,6 @@ import pytest
 from roboharness.core.capture import CameraView
 from roboharness.core.harness import SimulatorBackend
 
-
 # ---------------------------------------------------------------------------
 # mjlab stub — injected before importing MjlabBackend
 # ---------------------------------------------------------------------------
@@ -48,15 +47,28 @@ def _make_fake_sim(qpos: list[float] | None = None, time: float = 0.0) -> MagicM
     """Return a fake Simulation object backed by numpy."""
     qpos_arr = np.array(qpos or [0.0, 0.0], dtype=np.float64)
     qvel_arr = np.zeros_like(qpos_arr)
+    nq = len(qpos_arr)
+
     mj_data = MagicMock()
     mj_data.time = time
     mj_data.qpos = qpos_arr
     mj_data.qvel = qvel_arr
+    mj_data.qpos.shape = (nq,)
+    mj_data.qvel.shape = (nq,)
     mj_model = MagicMock()
+
+    wp_data = MagicMock()
+    wp_data.qpos = MagicMock()
+    wp_data.qvel = MagicMock()
+    wp_data.time = MagicMock()
+    wp_data.qpos.numpy.return_value = np.tile(qpos_arr, (2, 1))
+    wp_data.qvel.numpy.return_value = np.tile(qvel_arr, (2, 1))
+    wp_data.time.numpy.return_value = np.array([time, time], dtype=np.float64)
 
     sim = MagicMock()
     sim.mj_data = mj_data
     sim.mj_model = mj_model
+    sim.wp_data = wp_data
     sim.forward = MagicMock()
     return sim
 
@@ -70,6 +82,7 @@ def _make_fake_env(num_envs: int = 1, qpos: list[float] | None = None) -> MagicM
     env.device = "cpu"
 
     sim = _make_fake_sim(qpos=qpos)
+    env.sim = sim
     env.scene.sim = sim
     env.scene.sensors = {}  # no camera sensors by default
 
@@ -224,7 +237,10 @@ def test_capture_camera_cpu_renderer_fallback(fake_env: MagicMock) -> None:
     mock_renderer = MagicMock()
     mock_renderer.render.return_value = fake_rgb
 
-    with patch.object(mj, "Renderer", return_value=mock_renderer):
+    with (
+        patch.object(mj, "Renderer", return_value=mock_renderer),
+        patch.object(mj, "mj_forward"),
+    ):
         view = backend.capture_camera("front")
 
     assert isinstance(view, CameraView)
@@ -261,7 +277,10 @@ def test_capture_camera_caches_renderer(fake_env: MagicMock) -> None:
     mock_renderer = MagicMock()
     mock_renderer.render.return_value = fake_rgb
 
-    with patch.object(mj, "Renderer", return_value=mock_renderer) as mock_cls:
+    with (
+        patch.object(mj, "Renderer", return_value=mock_renderer) as mock_cls,
+        patch.object(mj, "mj_forward"),
+    ):
         backend.capture_camera("front")
         backend.capture_camera("front")
         # Constructor called only once despite two captures.

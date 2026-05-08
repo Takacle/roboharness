@@ -51,6 +51,7 @@ import numpy as np
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
+from roboharness._math_utils import SMPLX_BASE_ROTATION_QUAT  # noqa: E402
 from roboharness.alignment._gmr_params import load_gmr_params  # noqa: E402
 from roboharness.alignment._gmr_path import find_gmr_root  # noqa: E402
 from roboharness.alignment.orientation_aligner import extract_xml_body_names  # noqa: E402
@@ -68,10 +69,7 @@ def _resolve_robot(robot: str, src: str) -> tuple[Path, list[str], float]:
     try:
         ik_config_path = Path(str(params.IK_CONFIG_DICT[src][robot]))
     except KeyError:
-        print(
-            f"[stage_tpose] No IK config for {robot}/{src}; "
-            "extracting body names from XML."
-        )
+        print(f"[stage_tpose] No IK config for {robot}/{src}; extracting body names from XML.")
         link_names = extract_xml_body_names(xml_path)
         cam_distance = float(params.VIEWER_CAM_DISTANCE_DICT.get(robot, 2.5))
         return xml_path, link_names, cam_distance
@@ -481,6 +479,16 @@ def main() -> None:
         qpos_raw=args.qpos,
         robot_name=robot_name,
     )
+
+    if (
+        args.src == "smplx"
+        and args.qpos is None
+        and args.qpos_file is None
+        and model.nq >= 7
+        and int(model.jnt_type[0]) == 0
+    ):
+        qpos[3:7] = SMPLX_BASE_ROTATION_QUAT
+        print(f"[stage_tpose] Applied SMPL-X base root quaternion: {SMPLX_BASE_ROTATION_QUAT}")
 
     if args.preview:
         qpos = _preview_in_viewer(xml_path, qpos)

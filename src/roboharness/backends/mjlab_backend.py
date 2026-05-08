@@ -81,8 +81,7 @@ class MjlabBackend:
             import mjlab  # noqa: F401
         except ImportError as exc:
             raise ImportError(
-                "mjlab is required for this backend. "
-                "Install with: pip install roboharness[mjlab]"
+                "mjlab is required for this backend. Install with: pip install roboharness[mjlab]"
             ) from exc
 
         if task_id is None and env_cfg is None:
@@ -155,8 +154,6 @@ class MjlabBackend:
         ``action`` may be a numpy array or torch Tensor for a single
         environment.  It is automatically broadcast to ``(num_envs, action_dim)``.
         """
-        import torch
-
         action_t = self._coerce_action(action)
         self._env.step(action_t)
         return self._build_state()
@@ -223,6 +220,7 @@ class MjlabBackend:
         # Sync GPU warp state → CPU mj_data before rendering.
         self._sync_gpu_to_cpu()
         import mujoco
+
         sim = self._env.sim
         mujoco.mj_forward(sim.mj_model, sim.mj_data)
         renderer = self._get_cpu_renderer(camera_name)

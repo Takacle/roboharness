@@ -13,8 +13,9 @@ import math
 
 import pytest
 
+from roboharness._math_utils import normalize_quat as quat_normalize
+from roboharness._math_utils import quat_multiply
 from roboharness.alignment import apply_patch
-from roboharness._math_utils import normalize_quat as quat_normalize, quat_multiply
 from roboharness.alignment.patch import (
     SCALE_BOUNDS,
     _quats_close,

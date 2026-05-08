@@ -18,7 +18,7 @@ flag=1
 - `review_status=changes_requested`: Codex found blockers; opencode should fix them.
 
 Current owner: opencode (GLM-5.1)
-Last implementation commit: uncommitted
+Last implementation commit: b49163c
 Last verification command: pytest tests/alignment/ -q --no-cov (73 passed)
 Codex review status: pending
 Codex review feedback: TBD

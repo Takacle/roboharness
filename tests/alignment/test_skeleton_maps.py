@@ -48,12 +48,12 @@ class TestSkeletonData:
 
     def test_smplx_fallback_joints_exist_in_skeleton(self):
         all_joints = set(SMPLX_SKELETON.role_to_joint.values())
-        for child, parent in SMPLX_SKELETON.fallback_map.items():
+        for _child, parent in SMPLX_SKELETON.fallback_map.items():
             assert parent in all_joints, f"SMPL-X fallback parent {parent!r} not in joints"
 
     def test_bvh_fallback_joints_exist_in_skeleton(self):
         all_joints = set(BVH_SKELETON.role_to_joint.values())
-        for child, parent in BVH_SKELETON.fallback_map.items():
+        for _child, parent in BVH_SKELETON.fallback_map.items():
             assert parent in all_joints, f"BVH fallback parent {parent!r} not in joints"
 
 

@@ -85,18 +85,19 @@ def _insert_entry(
         if bounds is None:
             return None
         inner_start, close_idx = bounds
-        start_idx = inner_start
+        start_idx: int = inner_start
     else:
-        close_idx = _find_dict_closing_line(lines, dict_var_name)
-        if close_idx is None:
+        raw_close = _find_dict_closing_line(lines, dict_var_name)
+        if raw_close is None:
             return None
+        close_idx = raw_close
         start_pat = re.compile(rf"^{re.escape(dict_var_name)}\s*=\s*\{{")
-        start_idx = None
+        start_idx = -1
         for i, line in enumerate(lines):
             if start_pat.match(line.strip()):
                 start_idx = i
                 break
-        if start_idx is None:
+        if start_idx < 0:
             return None
 
     key_match = re.search(r'"([^"]+)"', entry_line)
@@ -171,23 +172,17 @@ def register_in_params(
     modified = lines[:]
     for dict_name, entry_line, sub_key in entries:
         if sub_key is not None:
-            bounds = _find_inner_dict_bounds(
-                original.splitlines(True), dict_name, sub_key
-            )
+            bounds = _find_inner_dict_bounds(original.splitlines(True), dict_name, sub_key)
             if bounds is not None:
                 inner_start, inner_end = bounds
-                inner_text = "".join(
-                    original.splitlines(True)[inner_start : inner_end + 1]
-                )
+                inner_text = "".join(original.splitlines(True)[inner_start : inner_end + 1])
                 if f'"{robot_name}"' in inner_text:
                     diff_lines.append(
                         f"  SKIP {dict_name}[{sub_key}]: {robot_name} already present"
                     )
                     continue
         elif f'"{robot_name}"' in original:
-            close_idx = _find_dict_closing_line(
-                original.splitlines(True), dict_name
-            )
+            close_idx = _find_dict_closing_line(original.splitlines(True), dict_name)
             if close_idx is not None:
                 start_pat = re.compile(rf"^{re.escape(dict_name)}\s*=\s*\{{")
                 lines_for_check = original.splitlines(True)
@@ -197,13 +192,9 @@ def register_in_params(
                         start_idx = i
                         break
                 if start_idx is not None:
-                    dict_text = "".join(
-                        lines_for_check[start_idx : close_idx + 1]
-                    )
+                    dict_text = "".join(lines_for_check[start_idx : close_idx + 1])
                     if f'"{robot_name}"' in dict_text:
-                        diff_lines.append(
-                            f"  SKIP {dict_name}: {robot_name} already present"
-                        )
+                        diff_lines.append(f"  SKIP {dict_name}: {robot_name} already present")
                         continue
 
         new_lines = _insert_entry(modified, dict_name, entry_line, sub_key)
@@ -280,8 +271,6 @@ def update_script_choices(
 
         if not dry_run:
             script_path.write_text(new_text)
-        modified.append(
-            f"  {'would update' if dry_run else 'updated'}: {script_path.name}"
-        )
+        modified.append(f"  {'would update' if dry_run else 'updated'}: {script_path.name}")
 
     return modified

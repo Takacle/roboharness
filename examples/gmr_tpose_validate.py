@@ -8,6 +8,13 @@ Given a canonical T-pose source motion (BVH/SMPL-X/FBX) and a committed
    residual rotation against the spec.
 3. Prints ``total_deviation``, ``worst_k``, and a pass/fail verdict.
 
+For SMPL-X sources, a template validation mode is also available via
+``--use_smplx_template``. This generates a synthetic SMPL-X frame from the
+body model zero-pose (no motion file required) and retargets that through
+GMR, comparing the result against the committed spec. This is the recommended
+validation path for SMPL-X configs because it avoids the ~180 degree root
+orientation deviation present in motion capture walking sequences.
+
 Exit code is ``0`` iff every link's ``angle_deg`` is below ``--threshold``
 (default 5°). This makes the script drop-in for CI gates, pre-commit hooks,
 or the ``gmr_alignment_agent.py`` convergence check.
@@ -17,6 +24,7 @@ images. If this script reports 0°, the config is correct at T-pose; if it
 reports 1000°, the VLM is not going to fix that by eyeballing pixels.
 
 Usage:
+    # Motion-based validation (BVH/SMPL-X/FBX motion file)
     python examples/gmr_tpose_validate.py \\
         --robot unitree_g1 \\
         --tpose_motion /path/to/tpose.bvh \\
@@ -24,6 +32,13 @@ Usage:
         [--bvh_format soma] \\
         [--spec specs/tpose/unitree_g1.json] \\
         [--threshold 5.0]
+
+    # Template-based validation (SMPL-X, no motion file needed)
+    python examples/gmr_tpose_validate.py \\
+        --robot v11 \\
+        --src smplx \\
+        --use_smplx_template \\
+        --spec specs/tpose/v11.json
 
 Requires ``pip install -e ".[demo]"`` plus a GMR checkout as a sibling dir.
 """
@@ -67,6 +82,31 @@ def _retarget_first_frame(src: str, motion_file: str, robot: str, bvh_format: st
     return retargeter.retarget(frames[0]).copy()
 
 
+def _retarget_template_frame(
+    robot: str,
+    body_model_dir: str | None = None,
+) -> np.ndarray:
+    from general_motion_retargeting import GeneralMotionRetargeting as GMR
+
+    from roboharness.alignment.smplx_template import (
+        load_smplx_template_tpose,
+        resolve_body_model_path,
+    )
+
+    body_model_root = resolve_body_model_path(body_model_dir)
+
+    frame, human_height = load_smplx_template_tpose(body_model_root)
+    print(f"[validate] Template frame: {len(frame)} joints, height={human_height:.2f}m")
+
+    retargeter = GMR(
+        src_human="smplx",
+        tgt_robot=robot,
+        actual_human_height=human_height,
+        verbose=False,
+    )
+    return retargeter.retarget(frame).copy()
+
+
 def _default_spec_path(robot: str) -> Path:
     return _HERE.parent / "specs" / "tpose" / f"{robot}.json"
 
@@ -79,7 +119,11 @@ def main() -> int:
     )
     parser.add_argument("--robot", required=True, help="Robot key (e.g. unitree_g1)")
     parser.add_argument(
-        "--tpose_motion", required=True, help="Path to a canonical T-pose motion file"
+        "--tpose_motion",
+        required=False,
+        default=None,
+        help="Path to a canonical T-pose motion file "
+        "(not required when --use_smplx_template is set)",
     )
     parser.add_argument("--src", default="bvh", choices=["bvh", "smplx", "fbx_offline"])
     parser.add_argument("--bvh_format", default="auto", choices=["auto", "lafan1", "soma"])
@@ -95,7 +139,25 @@ def main() -> int:
         help="Per-link angle_deg threshold for pass/fail (default 5°)",
     )
     parser.add_argument("--top_k", type=int, default=5, help="How many worst links to print")
+    parser.add_argument(
+        "--use_smplx_template",
+        action="store_true",
+        help="Use SMPL-X body model zero-pose as calibration source (no --tpose_motion needed)",
+    )
+    parser.add_argument(
+        "--smplx_template_model",
+        default=None,
+        help="Path to SMPLX body model *directory* (containing smplx/ subfolder). "
+        "Defaults to GMR/assets/body_models.",
+    )
     args = parser.parse_args()
+
+    if args.use_smplx_template and args.src != "smplx":
+        print(
+            "[validate] ERROR: --use_smplx_template requires --src smplx.",
+            file=sys.stderr,
+        )
+        return 2
 
     spec_path = args.spec or _default_spec_path(args.robot)
     if not spec_path.exists():
@@ -105,19 +167,45 @@ def main() -> int:
 
     spec = load_tpose_spec(spec_path)
 
-    # Apply SMPL-X base rotation to spec R matrices (same logic as agent)
-    if args.src in ("smplx",):
-        from roboharness.alignment.orientation_aligner import apply_smplx_base_rotation
-
-        spec = apply_smplx_base_rotation(spec)
-
     print(f"[validate] robot     : {args.robot}")
     print(f"[validate] spec      : {spec_path}")
-    print(f"[validate] motion    : {args.tpose_motion} ({args.src}/{args.bvh_format})")
+    if args.use_smplx_template:
+        print("[validate] source    : SMPL-X template (body model zero-pose)")
+    else:
+        print(f"[validate] motion    : {args.tpose_motion} ({args.src}/{args.bvh_format})")
     print(f"[validate] threshold : {args.threshold}° per link")
     print()
 
-    qpos = _retarget_first_frame(args.src, args.tpose_motion, args.robot, args.bvh_format)
+    if args.src in ("smplx",):
+        import numpy as np
+
+        from roboharness._math_utils import SMPLX_BASE_ROTATION_QUAT
+
+        root_quat = spec.get("qpos", [0] * 7)[3:7]
+        root_quat = np.asarray(root_quat, dtype=np.float64)
+        root_quat /= np.linalg.norm(root_quat) + 1e-12
+        base_quat = np.asarray(SMPLX_BASE_ROTATION_QUAT, dtype=np.float64)
+        dot = float(abs(np.dot(root_quat, base_quat)))
+        angle_deg = float(np.degrees(2 * np.arccos(np.clip(dot, 0, 1))))
+        print(f"[validate] SMPL-X root quaternion angle from base rotation: {angle_deg:.2f}°")
+        if angle_deg > 10.0:
+            print(
+                "[validate] WARNING: spec root quaternion differs significantly "
+                "from SMPLX_BASE_ROTATION. Ensure the spec was staged with "
+                "`stage_tpose.py --src smplx`."
+            )
+
+    if args.use_smplx_template:
+        qpos = _retarget_template_frame(args.robot, args.smplx_template_model)
+    else:
+        if not args.tpose_motion:
+            print(
+                "[validate] ERROR: --tpose_motion is required when "
+                "--use_smplx_template is not set.",
+                file=sys.stderr,
+            )
+            return 2
+        qpos = _retarget_first_frame(args.src, args.tpose_motion, args.robot, args.bvh_format)
     report = compute_deviations(qpos, spec["xml_path"], spec)
     total = total_deviation(report)
     top = worst_k(report, args.top_k)
@@ -139,6 +227,19 @@ def main() -> int:
         f"[validate] FAIL — {sum(1 for _, a in top if a >= args.threshold)} of top "
         f"{args.top_k} exceed {args.threshold}°. Tune the IK config and re-run."
     )
+    if args.src in ("smplx",) and max_angle > 30.0:
+        print(
+            "[validate] SMPL-X large-angle failure hint:\n"
+            "           - Verify staged spec was generated with "
+            "`stage_tpose.py --src smplx`\n"
+            "           - Re-solve offsets using the template calibration:\n"
+            "             python scripts/setup_robot.py --robot <robot> "
+            "--src smplx --update_scripts\n"
+            "           - Walking .npz files are motion inputs, "
+            "NOT calibration sources\n"
+            "           - Re-run setup/solve if spec was staged "
+            "without SMPL-X root base quat"
+        )
     return 1
 
 

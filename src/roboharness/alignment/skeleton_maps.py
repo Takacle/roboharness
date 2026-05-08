@@ -227,7 +227,6 @@ def get_skeleton(src_format: str) -> HumanSkeleton:
     skel = _SKELETON_REGISTRY.get(src_format)
     if skel is None:
         raise ValueError(
-            f"Unknown src_format {src_format!r}; "
-            f"choose from {sorted(_SKELETON_REGISTRY)}"
+            f"Unknown src_format {src_format!r}; choose from {sorted(_SKELETON_REGISTRY)}"
         )
     return skel

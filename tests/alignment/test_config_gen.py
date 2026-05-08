@@ -15,14 +15,26 @@ class TestGenerateIkConfig:
     @pytest.fixture()
     def h1_match(self):
         bodies = [
-            "pelvis", "left_hip_yaw_link", "left_hip_roll_link",
-            "left_hip_pitch_link", "left_knee_link", "left_ankle_link",
-            "right_hip_yaw_link", "right_hip_roll_link", "right_hip_pitch_link",
-            "right_knee_link", "right_ankle_link", "torso_link",
-            "left_shoulder_pitch_link", "left_shoulder_roll_link",
-            "left_shoulder_yaw_link", "left_elbow_link",
-            "right_shoulder_pitch_link", "right_shoulder_roll_link",
-            "right_shoulder_yaw_link", "right_elbow_link",
+            "pelvis",
+            "left_hip_yaw_link",
+            "left_hip_roll_link",
+            "left_hip_pitch_link",
+            "left_knee_link",
+            "left_ankle_link",
+            "right_hip_yaw_link",
+            "right_hip_roll_link",
+            "right_hip_pitch_link",
+            "right_knee_link",
+            "right_ankle_link",
+            "torso_link",
+            "left_shoulder_pitch_link",
+            "left_shoulder_roll_link",
+            "left_shoulder_yaw_link",
+            "left_elbow_link",
+            "right_shoulder_pitch_link",
+            "right_shoulder_roll_link",
+            "right_shoulder_yaw_link",
+            "right_elbow_link",
         ]
         return match_bodies(bodies, SMPLX_SKELETON)
 
@@ -81,10 +93,18 @@ class TestGenerateIkConfig:
 
     def test_bvh_skeleton_produces_bvh_names(self):
         bodies = [
-            "pelvis", "left_hip_roll_link", "left_knee_link", "left_ankle_roll_link",
-            "right_hip_roll_link", "right_knee_link", "right_ankle_roll_link",
-            "torso_link", "left_shoulder_roll_link", "left_elbow_link",
-            "right_shoulder_roll_link", "right_elbow_link",
+            "pelvis",
+            "left_hip_roll_link",
+            "left_knee_link",
+            "left_ankle_roll_link",
+            "right_hip_roll_link",
+            "right_knee_link",
+            "right_ankle_roll_link",
+            "torso_link",
+            "left_shoulder_roll_link",
+            "left_elbow_link",
+            "right_shoulder_roll_link",
+            "right_elbow_link",
         ]
         match = match_bodies(bodies, BVH_SKELETON)
         config = generate_ik_config(match, BVH_SKELETON)

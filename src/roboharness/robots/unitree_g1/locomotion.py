@@ -1018,7 +1018,7 @@ class SonicLocomotionController:
             aligned_ref_rot = self._tracking_heading_alignment @ ref_rot
             base_to_ref_rot = base_rot.T @ aligned_ref_rot
             windows.append(_rotation_matrix_to_sixd(base_to_ref_rot))
-        return np.concatenate(windows).astype(np.float32)
+        return np.concatenate(windows).astype(np.float32)  # type: ignore[no-any-return]
 
     def _append_tracking_history_sample(
         self,

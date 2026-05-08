@@ -146,6 +146,7 @@ module = [
     "huggingface_hub.*",
     "mcp.*",
     "mjlab.*",
-    "warp.*",
+    "scipy.*",
+    "instinct_mj.*",
 ]
 ignore_missing_imports = true
