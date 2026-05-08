@@ -130,7 +130,7 @@ def load_smplx_template_tpose(
         )
 
     if betas is None:
-        betas = np.zeros(10, dtype=np.float32)
+        betas = np.zeros(getattr(bm, "num_betas", 10), dtype=np.float32)
     betas_t = torch.tensor(betas, dtype=torch.float32).unsqueeze(0)
 
     num_frames = 1
