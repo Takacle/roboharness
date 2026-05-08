@@ -71,6 +71,10 @@ python scripts/stage_tpose.py --robot unitree_g1 --interactive \
 python scripts/stage_tpose.py --robot unitree_g1 \
     --qpos "0 0 0.793  1 0 0 0  ..." \
     --output_dir specs/tpose/
+
+# Option C: SMPL-X source — auto-stages root quaternion [0.5, -0.5, -0.5, -0.5].
+python scripts/stage_tpose.py --robot my_robot --src smplx \
+    --output_dir specs/tpose/
 ```
 
 Output is two artifacts that ship together as the contract:
@@ -238,13 +242,94 @@ the metric already found.
 | `total_deviation` oscillates between two values | Patch and its inverse applied alternately | Log the last 3 patch quaternions; if they include `q` and `q.conjugate`, freeze the loop |
 | One link always reports 90° no matter what | Missing `table2` mirror — IK pulls joint back | Diff `table1[joint][4]` vs `table2[joint][4]` |
 | All links report the same 90° rotation | `world_rotation` needed at top level, not per joint | Patch `world_rotation`, zero out per-joint offsets |
-| All links report ~90-120° with SMPL-X source | SMPL-X does not use `world_rotation` — see §10 | Ensure `world_rotation` key is absent from `smplx_to_*.json`; the IK solver's root free joint handles global orientation |
+| All links report ~90-120° with SMPL-X source | SMPL-X does not use `world_rotation` — see §11 | Ensure `world_rotation` key is absent from `smplx_to_*.json`; use template calibration (§10) instead of motion-based solving |
 | Non-arm links drift after an arm patch | Root-relative chain propagation (see `test_single_joint_perturbation_localizes`) | Expected: a shoulder rotation moves the whole arm-hand chain in the report |
 | Identity check fails (`spec.qpos` replayed gives non-zero deviation) | Spec XML differs from `--xml` used at runtime | Confirm `spec['xml_path']` is what you loaded |
 
 ---
 
-## 10. Format-specific world_rotation handling
+## 10. SMPL-X Template Calibration (recommended)
+
+For SMPL-X source format, the recommended workflow uses the body model's
+canonical zero-pose as the calibration source — not a motion capture `.npz`
+file. This avoids the ~180° root orientation deviation present in walking
+sequences and produces correct offsets in a single iteration.
+
+### Why template calibration
+
+| Problem with motion-based SMPL-X calibration | Template calibration fix |
+|---|---|
+| Walking `.npz` carries root orientation from capture | Body model zero-pose has identity root orientation |
+| Frame 0 may not be T-pose | Zero-pose *is* the canonical T-pose |
+| ~180° deviation in validation | Offsets solved against known ground truth |
+
+### One-command setup
+
+```bash
+# Solve offsets + validate in one command (no motion file needed)
+python scripts/setup_robot.py \
+    --robot v11 \
+    --src smplx \
+    --smplx_template_model /path/to/body_models \
+    --update_scripts
+```
+
+When `--smplx_template_model` points to a directory containing a `smplx/`
+subfolder (or directly to a `.npz` model file), `setup_robot.py` will:
+
+1. Generate a synthetic SMPL-X frame from the body model zero-pose
+   (`smplx_template.load_smplx_template_tpose()`).
+2. Solve per-link quaternion offsets via
+   `offset = inverse(human_quat) * robot_expected_quat`
+   (`smplx_offset_solver.solve_smplx_offsets_from_template()`).
+3. Validate by retargeting the synthetic frame through GMR and comparing
+   against `specs/tpose/<robot>.json`.
+
+### Body model path resolution
+
+`resolve_body_model_path()` accepts three forms:
+
+| Input | Resolution | Example |
+|---|---|---|
+| `body_models/` (dir with `smplx/` subfolder) | Returns `body_models/` | `GMR/assets/body_models` |
+| `body_models/smplx/` (smplx subfolder) | Returns parent `body_models/` | Auto-contract for `smplx.create()` |
+| `SMPLX_MALE.npz` or `arbitrary_name.npz` | Returns file as-is | Name-agnostic: bypasses `smplx.create()` filename inference |
+| `None` | Auto-discovers via `GMR_ROOT/assets/body_models` | Uses `find_gmr_root()` heuristics |
+
+For `.npz` files, `load_smplx_template_tpose()` directly instantiates
+`smplx.SMPLX(model_path)` — bypassing `smplx.create()` which extracts model
+type from the filename. This means a body model `.npz` can be renamed to any
+filename and still load correctly.
+
+### Standalone validation
+
+```bash
+# Template-based validation (no motion file needed)
+python examples/gmr_tpose_validate.py \
+    --robot v11 \
+    --src smplx \
+    --use_smplx_template \
+    --spec specs/tpose/v11.json
+
+# Motion-based validation (for debugging specific motion files)
+python examples/gmr_tpose_validate.py \
+    --robot v11 \
+    --src smplx \
+    --tpose_motion /path/to/walking.npz \
+    --spec specs/tpose/v11.json
+```
+
+### Key modules
+
+| Module | Purpose |
+|---|---|
+| `roboharness.alignment.smplx_template` | `load_smplx_template_tpose()`, `resolve_body_model_path()` |
+| `roboharness.alignment.smplx_offset_solver` | `solve_smplx_offsets_from_template()`, `write_solved_config()` |
+| `roboharness.alignment._gmr_path` | `find_gmr_root()` — auto-discovers GMR root |
+
+---
+
+## 11. Format-specific world_rotation handling
 
 `world_rotation` 在 IK config JSON 顶层将一个全局四元数旋转应用于所有人体骨骼的位置和朝向。
 其作用是：将人体数据从人体惯例的坐标系粗略旋转到机器人惯例的坐标系，使 IK 求解器
@@ -261,11 +346,15 @@ the metric already found.
 | 格式 | world_rotation 策略 | 原因 |
 |------|-------------------|------|
 | **BVH / FBX** | 自动检测并写入 config | BVH post-loader 惯例 `(X=left, Y=forward, Z=up)`，可与 robot 坐标轴通过纯旋转对齐 |
-| **SMPL-X** | 不写入（config 中无此 key） | SMPL-X 惯例 `(X=right, Y=up, Z=forward)` 与 robot `(X=forward, Y=left, Z=up)` 左右手性相反，纯旋转无法对齐三个轴；IK solver 的 root free joint（6-DoF）在求解时自动处理全局朝向 |
+| **SMPL-X** | 不写入（config 中无此 key） | SMPL-X 惯例 `(X=right, Y=up, Z=forward)` 与 robot `(X=forward, Y=left, Z=up)` 左右手性相反，纯旋转无法对齐三个轴；IK solver 的 root free joint（6-DoF）在求解时自动处理全局朝向。模板校准（§10）确保 offsets 正确 |
 
 SMPL-X 源格式的 T-pose spec 有专用辅助函数：
 `from roboharness.alignment.orientation_aligner import apply_smplx_base_rotation`。
 该函数将 `_math_utils.SMPLX_BASE_ROTATION_QUAT` 常数应用于 spec 中所有 `R` 矩阵。
+
+> **注意**: 模板校准流程（`smplx_offset_solver`）不会对 spec 调用 `apply_smplx_base_rotation`。
+> 模板帧的 quaternion 保持在 SMPL-X 惯例（Y-up），求解的 offsets 直接桥接到机器人 T-pose
+> spec 的 `R` 矩阵（已包含 SMPLX base rotation）。
 
 ### 手动覆盖
 
@@ -274,7 +363,7 @@ SMPL-X 源格式的 T-pose spec 有专用辅助函数：
 
 ---
 
-## 11. Next steps (Phase 2)
+## 12. Next steps (Phase 2)
 
 Once an agent consumes this SOP and the metric module proves it converges
 manually, the natural follow-up is to wire `compute_deviations` directly
