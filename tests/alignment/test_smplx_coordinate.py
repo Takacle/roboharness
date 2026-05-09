@@ -21,6 +21,7 @@ from scipy.spatial.transform import Rotation as R
 from roboharness.alignment.smplx_coordinate import (
     SMPL_TO_MUJOCO_QUAT,
     classify_smplx_frame_convention,
+    normalize_to_pelvis_z,
     smpl_to_mujoco_frame,
     smpl_to_mujoco_world_rotation,
     validate_smplx_runtime_config,
@@ -342,3 +343,66 @@ class TestValidateSmplxRuntimeConfig:
     def test_passes_when_converted_at_loader_false(self):
         config = {"world_rotation": [0.5, 0.5, 0.5, 0.5]}
         validate_smplx_runtime_config(config, "smplx_to_test.json", converted_at_loader=False)
+
+
+class TestNormalizeToPelvisZ:
+    def test_pelvis_becomes_zero(self):
+        frame = {
+            "pelvis": (np.array([0.5, -0.2, 0.95]), np.array([1.0, 0.0, 0.0, 0.0])),
+            "head": (np.array([0.5, -0.2, 1.72]), np.array([1.0, 0.0, 0.0, 0.0])),
+        }
+        normalize_to_pelvis_z(frame)
+        np.testing.assert_allclose(frame["pelvis"][0], [0.5, -0.2, 0.0], atol=1e-8)
+
+    def test_child_joints_shifted(self):
+        frame = {
+            "pelvis": (np.array([0.0, 0.0, 1.0]), np.array([1.0, 0.0, 0.0, 0.0])),
+            "knee": (np.array([0.0, 0.0, 0.5]), np.array([1.0, 0.0, 0.0, 0.0])),
+            "foot": (np.array([0.0, 0.0, 0.0]), np.array([1.0, 0.0, 0.0, 0.0])),
+        }
+        normalize_to_pelvis_z(frame)
+        np.testing.assert_allclose(frame["pelvis"][0][2], 0.0, atol=1e-8)
+        np.testing.assert_allclose(frame["knee"][0][2], -0.5, atol=1e-8)
+        np.testing.assert_allclose(frame["foot"][0][2], -1.0, atol=1e-8)
+
+    def test_explicit_pelvis_z_param(self):
+        frame = {
+            "pelvis": (np.array([0.1, 0.2, 0.3]), np.array([1.0, 0.0, 0.0, 0.0])),
+            "head": (np.array([0.1, 0.2, 1.0]), np.array([1.0, 0.0, 0.0, 0.0])),
+        }
+        normalize_to_pelvis_z(frame, pelvis_z=0.3)
+        np.testing.assert_allclose(frame["pelvis"][0][2], 0.0, atol=1e-8)
+        np.testing.assert_allclose(frame["head"][0][2], 0.7, atol=1e-8)
+
+    def test_quaternions_unchanged(self):
+        q = np.array([0.707, 0.707, 0.0, 0.0])
+        frame = {
+            "pelvis": (np.array([0.0, 0.0, 0.95]), q),
+        }
+        normalize_to_pelvis_z(frame)
+        np.testing.assert_array_equal(frame["pelvis"][1], q)
+
+    def test_x_y_unchanged(self):
+        frame = {
+            "pelvis": (np.array([1.5, -2.5, 0.95]), np.array([1.0, 0.0, 0.0, 0.0])),
+        }
+        normalize_to_pelvis_z(frame)
+        np.testing.assert_allclose(frame["pelvis"][0][0], 1.5, atol=1e-8)
+        np.testing.assert_allclose(frame["pelvis"][0][1], -2.5, atol=1e-8)
+
+    def test_no_op_on_zero_pelvis(self):
+        frame = {
+            "pelvis": (np.array([0.0, 0.0, 0.0]), np.array([1.0, 0.0, 0.0, 0.0])),
+            "knee": (np.array([0.0, 0.0, -0.5]), np.array([1.0, 0.0, 0.0, 0.0])),
+        }
+        knee_z_before = frame["knee"][0][2].copy()
+        normalize_to_pelvis_z(frame)
+        np.testing.assert_allclose(frame["knee"][0][2], knee_z_before, atol=1e-8)
+
+    def test_no_op_when_missing_pelvis(self):
+        frame = {
+            "head": (np.array([0.0, 0.0, 1.7]), np.array([1.0, 0.0, 0.0, 0.0])),
+        }
+        head_z_before = frame["head"][0][2].copy()
+        normalize_to_pelvis_z(frame)
+        np.testing.assert_allclose(frame["head"][0][2], head_z_before, atol=1e-8)

@@ -180,3 +180,32 @@ def classify_smplx_frame_convention(
         )
 
     return "y" if y_median > z_median else "z"
+
+
+def normalize_to_pelvis_z(
+    frame: dict[str, tuple[np.ndarray, np.ndarray]],
+    *,
+    pelvis_z: float | None = None,
+) -> None:
+    """Shift all positions in *frame* so that the pelvis sits at Z=0.
+
+    Normalising both the template and runtime frames to a common pelvis
+    Z reference makes computed position offsets independent of any
+    per-dataset ground reference (i.e.  the solution works for AMASS /
+    ACCAD, native SMPL-X, and any future data source without tuning).
+
+    Parameters
+    ----------
+    frame:
+        Single SMPL-X frame dict (positions in Z-up MuJoCo convention).
+    pelvis_z:
+        Reference pelvis Z to subtract.  When ``None`` the current
+        ``frame["pelvis"]`` Z is used.
+    """
+    if pelvis_z is None:
+        if "pelvis" not in frame:
+            return
+        pelvis_z = float(frame["pelvis"][0][2])
+    offset = np.array([0.0, 0.0, -pelvis_z], dtype=np.float64)
+    for name in frame:
+        frame[name] = (frame[name][0] + offset, frame[name][1])
