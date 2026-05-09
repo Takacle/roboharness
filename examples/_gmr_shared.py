@@ -124,7 +124,6 @@ def load_smplx(npz_file: str) -> tuple[list, float, int]:
 
     from roboharness.alignment.smplx_coordinate import (
         classify_smplx_frame_convention,
-        normalize_to_pelvis_z,
         smpl_to_mujoco_frame,
     )
 
@@ -149,11 +148,6 @@ def load_smplx(npz_file: str) -> tuple[list, float, int]:
             f"[smplx] Loaded: {len(frames)} frames @ {aligned_fps} fps"
             f"  height={human_height:.2f} m  (AMASS Z-up, no conversion)"
         )
-
-    if frames and "pelvis" in frames[0]:
-        ref_z = float(frames[0]["pelvis"][0][2])
-        for f in frames:
-            normalize_to_pelvis_z(f, pelvis_z=ref_z)
 
     return frames, human_height, aligned_fps
 

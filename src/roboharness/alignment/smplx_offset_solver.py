@@ -3,10 +3,9 @@
 Pipeline architecture (BVH-style, conversion at loader boundary):
 
     1. ``load_smplx_template_tpose`` — generate Z-up template frame
-    2. ``normalize_to_pelvis_z`` — shift pelvis to Z=0 (dataset-agnostic)
-    3. ``apply_human_scale`` — scale positions per bone scale factors
-    4. ``apply_world_rotation_to_frame`` — apply config world_rotation (matches runtime)
-    5. ``compute_joint_offsets`` — pure offset computation per joint
+    2. ``apply_human_scale`` — scale positions per bone scale factors
+    3. ``apply_world_rotation_to_frame`` — apply config world_rotation (matches runtime)
+    4. ``compute_joint_offsets`` — pure offset computation per joint
 
 Public API: ``solve_smplx_offsets_from_template()`` — unchanged signature.
 """
@@ -137,12 +136,7 @@ def solve_smplx_offsets_from_template(
 ) -> dict:
     """Solve SMPL-X offsets using the canonical template T-pose.
 
-    Pipeline: load (Z-up) → normalise pelvis Z → scale → world_rotation → solve.
-
-    The pelvis-Z normalisation shifts all positions so the pelvis sits at
-    Z=0 before offsets are computed.  This keeps the position offsets
-    independent of any per-dataset ground reference (AMASS ``trans`` vs
-    body-model ``transl``) and makes one config work across datasets.
+    Pipeline: load (Z-up) → scale → apply world_rotation → solve offsets.
 
     The world_rotation application matches the GMR runtime order
     (scale → world_rotation → offset), ensuring solved offsets are
@@ -173,10 +167,6 @@ def solve_smplx_offsets_from_template(
     _check_stale_smplx_config(config, ik_config_path)
 
     frame, human_height = load_smplx_template_tpose(body_model_resolved, gender=gender)
-
-    from roboharness.alignment.smplx_coordinate import normalize_to_pelvis_z
-
-    normalize_to_pelvis_z(frame)
 
     human_root_name = str(config.get("human_root_name", "pelvis"))
     scale_table_raw = config.get("human_scale_table", {})

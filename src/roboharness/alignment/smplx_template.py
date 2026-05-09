@@ -153,6 +153,9 @@ def load_smplx_template_tpose(
     full_body_pose = out.full_pose[0].reshape(-1, 3).detach().numpy()
     global_orient = full_body_pose[0]
 
+    min_y = float(joints[:, 1].min())
+    joints[:, 1] -= min_y
+
     parents = bm.parents
     joint_names = JOINT_NAMES[: len(parents)]
 
