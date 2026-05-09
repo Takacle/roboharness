@@ -17,8 +17,11 @@ The human convention used depends on ``src_format``:
   frame.
 
 .. note::
-   Raw GMR SMPL-X loader output (without roboharness) is still Y-up.
-   Direct GMR callers must apply ``smpl_to_mujoco_frame()`` themselves.
+   Raw GMR SMPL-X loader output may be Y-up (native) or Z-up (AMASS/ACCAD
+   where ``global_orient`` was applied in the wrong convention).  Direct GMR
+   callers should classify the convention with
+   ``classify_smplx_frame_convention()`` and only apply
+   ``smpl_to_mujoco_frame()`` for Y-up data.
 
 Supports robots with missing arms, head, or legs via fallback logic.
 """

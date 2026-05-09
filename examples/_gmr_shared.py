@@ -122,7 +122,10 @@ def load_smplx(npz_file: str) -> tuple[list, float, int]:
         load_smplx_file,
     )
 
-    from roboharness.alignment.smplx_coordinate import smpl_to_mujoco_frame
+    from roboharness.alignment.smplx_coordinate import (
+        classify_smplx_frame_convention,
+        smpl_to_mujoco_frame,
+    )
 
     smplx_body_model_path = GMR_ROOT / "assets" / "body_models"
     smplx_data, body_model, smplx_output, human_height = load_smplx_file(
@@ -132,11 +135,20 @@ def load_smplx(npz_file: str) -> tuple[list, float, int]:
     frames, aligned_fps = get_smplx_data_offline_fast(
         smplx_data, body_model, smplx_output, tgt_fps=tgt_fps
     )
-    frames = [smpl_to_mujoco_frame(f) for f in frames]
-    print(
-        f"[smplx] Loaded: {len(frames)} frames @ {aligned_fps} fps"
-        f"  height={human_height:.2f} m  (Z-up)"
-    )
+
+    convention = classify_smplx_frame_convention(frames)
+    if convention == "y":
+        frames = [smpl_to_mujoco_frame(f) for f in frames]
+        print(
+            f"[smplx] Loaded: {len(frames)} frames @ {aligned_fps} fps"
+            f"  height={human_height:.2f} m  (Y-up → Z-up converted)"
+        )
+    else:
+        print(
+            f"[smplx] Loaded: {len(frames)} frames @ {aligned_fps} fps"
+            f"  height={human_height:.2f} m  (AMASS Z-up, no conversion)"
+        )
+
     return frames, human_height, aligned_fps
 
 

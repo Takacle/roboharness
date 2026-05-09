@@ -113,3 +113,70 @@ def smpl_to_mujoco_world_rotation() -> list[float]:
         robot geometry.  Kept for backward compatibility.
     """
     return list(SMPL_TO_MUJOCO_QUAT)
+
+
+def classify_smplx_frame_convention(
+    frames: list[dict[str, tuple[np.ndarray, np.ndarray]]],
+    max_samples: int = 30,
+) -> str:
+    """Classify whether GMR SMPLX frames are native Y-up or AMASS Z-up.
+
+    Examines pelvis orientation across the first *max_samples* frames.  For
+    native SMPLX data the body-local up axis (Y) aligns with world Y; for
+    AMASS data (where ``global_orient`` was applied in the wrong convention)
+    body-local Y aligns with world Z.
+
+    Parameters
+    ----------
+    frames:
+        GMR SMPLX loader output frames (before any conversion).
+    max_samples:
+        Number of early frames to sample.
+
+    Returns
+    -------
+    ``"y"`` for native Y-up data (needs ``smpl_to_mujoco_frame()``),
+    ``"z"`` for AMASS Z-up data (skip conversion — already Z-up).
+
+    Raises
+    ------
+    RuntimeError
+        If *frames* is empty.
+    KeyError
+        If ``"pelvis"`` is missing from the first frame.
+    ValueError
+        If a pelvis quaternion has non-unit norm, or if the convention is
+        ambiguous (median Y-score and Z-score within 0.25).
+    """
+    from scipy.spatial.transform import Rotation as R
+
+    if not frames:
+        raise RuntimeError("No SMPLX frames to classify")
+    if "pelvis" not in frames[0]:
+        raise KeyError("Frame missing 'pelvis' joint for convention detection")
+
+    n = min(max_samples, len(frames))
+    y_scores: list[float] = []
+    z_scores: list[float] = []
+
+    for i in range(n):
+        q = np.asarray(frames[i]["pelvis"][1], dtype=np.float64)
+        norm = float(np.linalg.norm(q))
+        if norm < 0.9 or norm > 1.1:
+            raise ValueError(f"Frame {i} pelvis quaternion has invalid norm {norm:.4f}")
+        rq = R.from_quat(q, scalar_first=True)
+        ly = rq.apply(np.array([0.0, 1.0, 0.0]))
+        y_scores.append(float(ly[1]))
+        z_scores.append(float(ly[2]))
+
+    y_median = float(np.median(y_scores))
+    z_median = float(np.median(z_scores))
+    margin = abs(y_median - z_median)
+
+    if margin < 0.25:
+        raise ValueError(
+            f"Ambiguous SMPLX convention (Y={y_median:.3f}, Z={z_median:.3f}, "
+            f"margin={margin:.3f}). Cannot auto-detect coordinate system."
+        )
+
+    return "y" if y_median > z_median else "z"
