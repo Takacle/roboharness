@@ -2,7 +2,7 @@
 
 _Created: 2026-05-07_
 _Last updated: 2026-05-09_
-_Status: Loader-boundary refactor implemented, pending E2E verification_
+_Status: Loader-boundary refactor complete, Codex approved_
 
 This document records the SMPL-X robot alignment fix — template calibration,
 world-rotation coordinate conversion, and offset solver — for multi-agent
@@ -21,7 +21,7 @@ flag=1
 Current owner: opencode (GLM-5.1)
 Last implementation commit: pending (all changes staged, ready to commit)
 Last verification command: `pytest -q` (764 passed, 3 skipped, 91.20% coverage)
-Codex review status: pending (6 re-review findings addressed, awaiting 2nd re-review; see smplx-refactoring-plan.md)
+Codex review status: approved (2nd re-review passed; see smplx-refactoring-plan.md)
 
 ## Context
 
@@ -524,3 +524,4 @@ Success: no issues found in 54 source files
 | 2026-05-09 | opencode (GLM-5.1) | Loader-boundary refactor | Addressed all 6 Codex findings. SMPLX conversion now at loader boundary (BVH-style). `compute_world_rotation("smplx")` uses geometry. Solver applies wr before offsets. Stale config warning. 764 tests, 91.20% coverage. See `docs/smplx-refactoring-plan.md` for full details. |
 | 2026-05-09 | Codex | Re-review | 6 findings: runtime stale-config not covered, solver warning insufficient, Section 2.3 contradiction, downstream docs stale, orientation_aligner docstring obsolete, weak axis-mapping tests. |
 | 2026-05-09 | opencode (GLM-5.1) | Re-review fixes | All 6 re-review findings addressed. `validate_smplx_runtime_config()` (fail-fast) at all SMPL-X entry points. Section 2.3, SOP, user guide, docstrings corrected. Axis-mapping test assertions added. 770 tests, 91.26% coverage. |
+| 2026-05-09 | Codex | Final re-review | **Approved.** All findings addressed. Residual note: direct GMR callers remain outside loader-boundary contract. |

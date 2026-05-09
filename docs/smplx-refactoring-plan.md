@@ -2,7 +2,7 @@
 
 _Created: 2026-05-09_
 _Owner: opencode (GLM-5.1)_
-_Status: Needs revision after Codex re-review_
+_Status: Approved after Codex re-review_
 
 ## flag=1
 
@@ -1083,3 +1083,53 @@ $ ruff format --check .
 $ mypy src/
 Success: no issues found in 56 source files
 ```
+
+---
+
+## Codex Final Re-Review (2026-05-09)
+
+_Reviewer: Codex_
+_Status: Approved_
+
+### Summary
+
+Approved. The issues from the previous Codex re-review have been addressed in
+the current implementation:
+
+- SMPL-X stale legacy base `world_rotation` is now detected by a shared
+  `validate_smplx_runtime_config()` helper.
+- The solver now fail-fast validates stale configs before applying
+  `world_rotation`.
+- Roboharness runtime entry points validate SMPL-X configs before constructing
+  GMR retargeters.
+- Section 2.3 no longer claims identity offsets for converted zero-pose SMPL-X
+  orientations.
+- SOP/user docs and `orientation_aligner.py` docstrings now reflect the
+  loader-boundary policy.
+- SMPL-X axis mapping tests now assert the expected basis mapping, not only
+  determinant positivity.
+
+### Verification
+
+Ran full test suite:
+
+```text
+$ python -m pytest -q
+770 passed, 3 skipped in 18.10s
+Coverage: 91.26% (>=90% threshold)
+```
+
+Targeted SMPL-X tests also passed functionally. Running only the targeted subset
+under the repository's global coverage gate fails the coverage threshold because
+too few modules are exercised, not because the SMPL-X tests fail.
+
+### Residual Notes
+
+Direct GMR callers that bypass roboharness loaders remain outside the
+loader-boundary contract and must either apply `smpl_to_mujoco_frame()`
+themselves or use configs appropriate for raw Y-up data. This is documented and
+is not a blocker for this roboharness refactor.
+
+### Current Verdict
+
+Approved. Keep `flag=1`.
