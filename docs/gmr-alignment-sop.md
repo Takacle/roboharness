@@ -242,7 +242,7 @@ the metric already found.
 | `total_deviation` oscillates between two values | Patch and its inverse applied alternately | Log the last 3 patch quaternions; if they include `q` and `q.conjugate`, freeze the loop |
 | One link always reports 90° no matter what | Missing `table2` mirror — IK pulls joint back | Diff `table1[joint][4]` vs `table2[joint][4]` |
 | All links report the same 90° rotation | `world_rotation` needed at top level, not per joint | Patch `world_rotation`, zero out per-joint offsets |
-| All links report ~90-120° with SMPL-X source | SMPL-X `world_rotation` not computed, stale, or missing from config | Ensure `compute_world_rotation` returns the SMPL-X base runtime rotation only; verify `world_rotation` key is present in `smplx_to_*.json` |
+| All links report ~90-120° with SMPL-X source | SMPL-X config 使用了 stale legacy `world_rotation`，或未通过 roboharness loader 加载 | 检查 config 是否含有 `world_rotation = [0.5,0.5,0.5,0.5]`（legacy base）；重新生成 config；确认数据通过 `load_smplx()` 加载（Z-up） |
 | Non-arm links drift after an arm patch | Root-relative chain propagation (see `test_single_joint_perturbation_localizes`) | Expected: a shoulder rotation moves the whole arm-hand chain in the report |
 | Identity check fails (`spec.qpos` replayed gives non-zero deviation) | Spec XML differs from `--xml` used at runtime | Confirm `spec['xml_path']` is what you loaded |
 
@@ -346,14 +346,17 @@ python examples/gmr_tpose_validate.py \
 | 格式 | world_rotation 策略 | 原因 |
 |------|-------------------|------|
 | **BVH / FBX** | 自动检测并写入 config | BVH post-loader 惯例 `(X=left, Y=forward, Z=up)`，可与 robot 坐标轴通过纯旋转对齐 |
-| **SMPL-X** | 自动写入 config（base runtime rotation only） | SMPL-X 惯例 `(Y=up, X=left, Z=forward)` 由 base rotation 转为 MuJoCo world `(Z=up, Y=left, X=forward)`。不要再乘 `R_mat`，因为 `R_mat` 基于 BVH canonical frame，会交换 SMPL-X 的 left/forward 轴。模板校准（§10）在同一 Z-up 帧下求解 offsets，与 runtime `apply_world_rotation` 一致 |
+| **SMPL-X** | 自动检测（geometry-based，可能为 None） | SMPL-X 数据在 loader 边界已转换为 Z-up（`smpl_to_mujoco_frame()`）。`compute_world_rotation('smplx')` 基于 robot 几何计算 fine-tuning 对齐。旧 config 中的 legacy base `world_rotation = [0.5,0.5,0.5,0.5]` 是 stale 的，会 double-apply Y→Z |
 
-SMPL-X 源格式的 T-pose spec 的 root qpos 为 identity `[1, 0, 0, 0]`（机器人直立），
-`world_rotation` 在 IK config 中负责将 SMPL-X Y-up 人体数据旋转到 robot Z-up 帧。
+SMPL-X 源格式的 T-pose spec 的 root qpos 为 identity `[1, 0, 0, 0]`（机器人直立）。
+SMPL-X 数据通过 roboharness loader 加载时已转换为 Z-up（X=forward, Y=left, Z=up）。
 
-> **注意**: 模板校准流程（`smplx_offset_solver`）会在内部对 template frame 做 Y-up→Z-up
-> 转换后再求解 offsets。求解后的 config 保留 `world_rotation`，以便 runtime 的
-> `apply_world_rotation` 对实际运动数据做相同变换。
+> **注意**: SMPL-X 模板校准流程（`smplx_offset_solver`）使用 Z-up 模板帧求解 offsets。
+> 如果 config 中有 geometry-based `world_rotation`，solver 会在求解前将其应用到模板帧（匹配 runtime 顺序）。
+> Solver 不再注入或修改 `world_rotation`。
+> Legacy base `world_rotation = [0.5,0.5,0.5,0.5]` 会触发 `ValueError`——需要通过
+> `setup_robot.py --src smplx --auto_register --update_scripts` 重新生成 config。
+> 直接调用 GMR 的脚本（不经过 roboharness loader）仍然收到 Y-up 数据，不在此次重构范围内。
 
 ### 手动覆盖
 

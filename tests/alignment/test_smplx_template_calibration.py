@@ -280,9 +280,7 @@ class TestSolveSmplxOffsetsFromTemplate:
         )
 
         assert "world_rotation" in solved
-        np.testing.assert_allclose(
-            solved["world_rotation"], [0.5, -0.5, -0.5, -0.5], atol=1e-10
-        )
+        np.testing.assert_allclose(solved["world_rotation"], [0.5, -0.5, -0.5, -0.5], atol=1e-10)
 
     def test_solver_does_not_inject_world_rotation(self, tmp_path: Path):
         config_path = self._make_ik_config(tmp_path)

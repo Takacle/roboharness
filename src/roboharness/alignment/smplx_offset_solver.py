@@ -26,27 +26,17 @@ from roboharness.alignment.smplx_template import (
 
 
 def _check_stale_smplx_config(config: dict, config_path: Path) -> None:
-    """Warn if the config contains a legacy SMPL-X base world_rotation.
+    """Fail-fast if the config contains a legacy SMPL-X base world_rotation.
 
     After the loader-boundary refactor, SMPL-X data arrives in Z-up at the
     GMR runtime.  A stale config with ``world_rotation = [0.5, 0.5, 0.5, 0.5]``
     would apply the Y→Z conversion a second time, producing incorrect results.
-    """
-    import warnings
 
-    wr = config.get("world_rotation")
-    if wr is None:
-        return
-    base = [0.5, 0.5, 0.5, 0.5]
-    if len(wr) == 4 and all(abs(a - b) < 1e-6 for a, b in zip(wr, base, strict=True)):
-        warnings.warn(
-            f"SMPL-X config {config_path.name} contains the legacy base "
-            "world_rotation [0.5, 0.5, 0.5, 0.5].  After the loader-boundary "
-            "refactor, SMPL-X data is already Z-up when it reaches GMR runtime.  "
-            "This world_rotation will double-apply the Y→Z conversion.  "
-            "Regenerate the config via setup_robot.py or compute_world_rotation().",
-            stacklevel=3,
-        )
+    Raises ``ValueError`` so the caller must regenerate or migrate the config.
+    """
+    from roboharness.alignment.smplx_coordinate import validate_smplx_runtime_config
+
+    validate_smplx_runtime_config(config, config_path, converted_at_loader=True)
 
 
 def _apply_rotation_to_frame(

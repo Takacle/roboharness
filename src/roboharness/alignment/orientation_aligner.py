@@ -7,10 +7,18 @@ that aligns the two frames.
 The human convention used depends on ``src_format``:
 
 * ``"bvh"`` — after the BVH/LAFAN1 loader, the coordinate axes are
-  X=right, Y=forward, Z=up.
-* ``"smplx"`` — raw SMPL-X data is Y-up.  ``world_rotation`` uses the
-  SMPL-X base conversion so the human data is rotated into the robot's
-  Z-up world frame before IK, while the robot root stays upright.
+  X=left, Y=forward, Z=up.
+* ``"smplx"`` — roboharness SMPL-X runtime frames are already converted to
+  Z-up at the loader boundary (via ``smpl_to_mujoco_frame()``).  The
+  post-conversion convention is X=forward, Y=left, Z=up.
+  ``compute_world_rotation("smplx")`` computes a geometry-based alignment
+  from robot body positions (not the SMPL-X base conversion).  It may
+  return ``None`` when the robot geometry already matches the post-conversion
+  frame.
+
+.. note::
+   Raw GMR SMPL-X loader output (without roboharness) is still Y-up.
+   Direct GMR callers must apply ``smpl_to_mujoco_frame()`` themselves.
 
 Supports robots with missing arms, head, or legs via fallback logic.
 """

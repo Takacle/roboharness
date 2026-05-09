@@ -61,12 +61,25 @@ from roboharness.alignment import (
     total_deviation,
     worst_k,
 )
+from roboharness.alignment.smplx_coordinate import validate_smplx_runtime_config
 
 _HERE = Path(__file__).resolve().parent
 
 
 def _retarget_first_frame(src: str, motion_file: str, robot: str, bvh_format: str) -> np.ndarray:
     from general_motion_retargeting import GeneralMotionRetargeting as GMR
+    from general_motion_retargeting.params import IK_CONFIG_DICT
+
+    if src == "smplx":
+        cfg_path = IK_CONFIG_DICT.get(src, {}).get(robot, "")
+        if cfg_path:
+            import json
+            from pathlib import Path as _P
+
+            p = _P(str(cfg_path))
+            if p.exists():
+                with p.open() as _f:
+                    validate_smplx_runtime_config(json.load(_f), p)
 
     frames, human_height, _ = load_motion(src, motion_file, bvh_format)
 
@@ -97,6 +110,18 @@ def _retarget_template_frame(
 
     frame, human_height = load_smplx_template_tpose(body_model_root)
     print(f"[validate] Template frame: {len(frame)} joints, height={human_height:.2f}m")
+
+    import json
+    from pathlib import Path as _P
+
+    from general_motion_retargeting.params import IK_CONFIG_DICT
+
+    cfg_path = IK_CONFIG_DICT.get("smplx", {}).get(robot, "")
+    if cfg_path:
+        p = _P(str(cfg_path))
+        if p.exists():
+            with p.open() as _f:
+                validate_smplx_runtime_config(json.load(_f), p)
 
     retargeter = GMR(
         src_human="smplx",

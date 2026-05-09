@@ -161,8 +161,33 @@ class TestComputeWorldRotationSmplx:
             return
 
         r = R.from_quat(np.asarray(result, dtype=np.float64), scalar_first=True)
-        assert np.linalg.det(r.as_matrix()) > 0, (
-            "SMPLX world_rotation must be a proper rotation (det > 0)"
+        mat = r.as_matrix()
+        assert np.linalg.det(mat) > 0, "SMPLX world_rotation must be a proper rotation (det > 0)"
+
+    def test_smplx_axis_mapping_for_bvh_aligned_robot(self, robot_xml: Path):
+        """R * e_forward == robot_forward, R * e_left == robot_left, R * e_up == robot_up."""
+        from roboharness.alignment.orientation_aligner import compute_world_rotation
+
+        result = compute_world_rotation(robot_xml, self._make_match(), src_format="smplx")
+        if result is None:
+            pytest.skip("SMPLX returned None for this robot geometry")
+
+        r = R.from_quat(np.asarray(result, dtype=np.float64), scalar_first=True)
+        mat = r.as_matrix()
+
+        up = mat @ np.array([0.0, 0.0, 1.0])
+        assert np.dot(up, np.array([0.0, 0.0, 1.0])) > 0.9, (
+            f"SMPLX R*[0,0,1] should map close to robot up (+Z), got {up}"
+        )
+
+        lft = mat @ np.array([0.0, 1.0, 0.0])
+        assert np.dot(lft, np.array([1.0, 0.0, 0.0])) > 0.9, (
+            f"SMPLX R*[0,1,0] should map close to robot left (+X), got {lft}"
+        )
+
+        fwd = mat @ np.array([1.0, 0.0, 0.0])
+        assert np.dot(fwd, np.array([0.0, -1.0, 0.0])) > 0.9, (
+            f"SMPLX R*[1,0,0] should map close to robot forward (-Y), got {fwd}"
         )
 
     def test_smplx_does_not_use_hardcoded_base_rotation(self, robot_xml: Path):

@@ -173,3 +173,38 @@ class TestSolverUsesPipeline:
         assert "smpl_to_mujoco_world_rotation" not in source, (
             "smplx_offset_solver.py must not import smpl_to_mujoco_world_rotation"
         )
+
+
+class TestValidateSmplxRuntimeConfig:
+    def test_raises_on_legacy_base_world_rotation(self):
+        import pytest
+
+        from roboharness.alignment.smplx_coordinate import validate_smplx_runtime_config
+
+        config = {"world_rotation": [0.5, 0.5, 0.5, 0.5]}
+        with pytest.raises(ValueError, match="legacy base"):
+            validate_smplx_runtime_config(config, "smplx_to_test.json")
+
+    def test_passes_on_none_world_rotation(self):
+        from roboharness.alignment.smplx_coordinate import validate_smplx_runtime_config
+
+        config = {"world_rotation": None}
+        validate_smplx_runtime_config(config, "smplx_to_test.json")
+
+    def test_passes_on_geometry_based_world_rotation(self):
+        from roboharness.alignment.smplx_coordinate import validate_smplx_runtime_config
+
+        config = {"world_rotation": [0.707, 0.0, 0.0, 0.707]}
+        validate_smplx_runtime_config(config, "smplx_to_test.json")
+
+    def test_passes_when_no_world_rotation_key(self):
+        from roboharness.alignment.smplx_coordinate import validate_smplx_runtime_config
+
+        config = {}
+        validate_smplx_runtime_config(config, "smplx_to_test.json")
+
+    def test_passes_when_converted_at_loader_false(self):
+        from roboharness.alignment.smplx_coordinate import validate_smplx_runtime_config
+
+        config = {"world_rotation": [0.5, 0.5, 0.5, 0.5]}
+        validate_smplx_runtime_config(config, "smplx_to_test.json", converted_at_loader=False)

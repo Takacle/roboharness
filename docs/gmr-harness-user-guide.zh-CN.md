@@ -205,7 +205,7 @@ python scripts/stage_tpose.py \
     --output_dir specs/tpose/
 ```
 
-### 5.4 SMPL-X 源（自动应用根节点四元数）
+### 5.4 SMPL-X 源（identity root quaternion）
 
 ```bash
 python scripts/stage_tpose.py \
@@ -214,7 +214,7 @@ python scripts/stage_tpose.py \
     --output_dir specs/tpose/
 ```
 
-SMPL-X 源自动设置 `qpos[3:7] = [0.5, -0.5, -0.5, -0.5]`。
+SMPL-X 源自动设置 `qpos[3:7] = [1, 0, 0, 0]`（identity，机器人直立）。
 
 ### 5.5 查看关节列表
 
@@ -448,7 +448,7 @@ ls $GMR_ROOT/assets/body_models/smplx/SMPLX_MALE.npz
 | 原因 | 检查 |
 |------|------|
 | 使用行走 `.npz` 作为校准源 | 改用模板校准（`--use_smplx_template`） |
-| SMPL-X 配置缺少 `world_rotation` 或使用旧的组合旋转 | 重新执行 `setup_robot.py --src smplx --auto_register --update_scripts`，确认 `smplx_to_*.json` 中包含新的 base runtime `world_rotation` |
+| SMPL-X 配置缺少 `world_rotation` 或使用旧的 legacy base rotation | 重新执行 `setup_robot.py --src smplx --auto_register --update_scripts`。Legacy `world_rotation = [0.5,0.5,0.5,0.5]` 在 loader-boundary 重构后会导致 double-apply Y→Z |
 | T-pose 规格未用 SMPL-X 源采集 | 重新执行 `stage_tpose.py --src smplx` |
 
 ### `setup_robot.py` 报 XML 不在正确位置

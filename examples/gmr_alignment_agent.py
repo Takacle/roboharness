@@ -37,6 +37,7 @@ from typing import Any
 import numpy as np
 from _gmr_shared import (
     GMRReplayBackend,
+    check_smplx_config_before_retarget,
     find_root_body,
     load_motion,
     scaled_human_reference,
@@ -592,6 +593,7 @@ def _retarget(
     from general_motion_retargeting import GeneralMotionRetargeting as GMR
     from tqdm import tqdm
 
+    check_smplx_config_before_retarget(robot, src)
     frames, human_height, _ = load_motion(src, motion_file, bvh_format)
 
     if max_frames is not None:
@@ -623,6 +625,7 @@ def _retarget(
 def _retarget_tpose_qpos(src: str, motion_file: str, robot: str, bvh_format: str) -> np.ndarray:
     from general_motion_retargeting import GeneralMotionRetargeting as GMR
 
+    check_smplx_config_before_retarget(robot, src)
     frames, human_height, _ = load_motion(src, motion_file, bvh_format)
 
     retargeter = GMR(

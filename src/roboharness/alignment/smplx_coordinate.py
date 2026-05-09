@@ -27,6 +27,8 @@ and requires no inversion.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 
 SMPL_TO_MUJOCO_QUAT: list[float] = [0.5, 0.5, 0.5, 0.5]
@@ -61,6 +63,43 @@ def smpl_to_mujoco_frame(
         new_quat = (r_conv * R.from_quat(q, scalar_first=True)).as_quat(scalar_first=True)
         transformed[name] = (new_pos, new_quat)
     return transformed
+
+
+def _is_legacy_base_world_rotation(wr: list[float] | None) -> bool:
+    """Return True if *wr* is the legacy SMPL-X base world_rotation."""
+    if wr is None:
+        return False
+    base = SMPL_TO_MUJOCO_QUAT
+    return len(wr) == 4 and all(abs(a - b) < 1e-6 for a, b in zip(wr, base, strict=True))
+
+
+def validate_smplx_runtime_config(
+    config: dict,
+    config_path: str | Path,
+    *,
+    converted_at_loader: bool = True,
+) -> None:
+    """Validate a SMPL-X IK config for compatibility with loader-boundary conversion.
+
+    After the loader-boundary refactor, SMPL-X data arrives in Z-up at GMR
+    runtime.  A stale config with ``world_rotation = [0.5, 0.5, 0.5, 0.5]``
+    would apply the Y→Z conversion a second time.
+
+    Raises ``ValueError`` when a stale config is detected.
+    """
+    if not converted_at_loader:
+        return
+    wr = config.get("world_rotation")
+    if _is_legacy_base_world_rotation(wr):
+        raise ValueError(
+            f"SMPL-X config {config_path} contains the legacy base "
+            "world_rotation [0.5, 0.5, 0.5, 0.5].  After the loader-boundary "
+            "refactor, SMPL-X data is already Z-up when it reaches GMR runtime.  "
+            "This world_rotation will double-apply the Y→Z conversion.  "
+            "Regenerate the config via:\n"
+            "  python scripts/setup_robot.py --robot <robot> --src smplx "
+            "--auto_register --update_scripts"
+        )
 
 
 def smpl_to_mujoco_world_rotation() -> list[float]:

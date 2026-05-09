@@ -65,6 +65,33 @@ def find_root_body(xml_path: Path) -> str:
     return matches[0] if matches else "pelvis"
 
 
+def check_smplx_config_before_retarget(robot: str, src: str) -> None:
+    """Validate SMPL-X IK config before constructing a GMR retargeter.
+
+    Raises ``ValueError`` if the config contains a stale legacy base
+    world_rotation that would double-apply Y→Z conversion at runtime.
+    No-op for non-SMPLX sources.
+    """
+    if src != "smplx":
+        return
+    import json
+
+    from roboharness.alignment.smplx_coordinate import validate_smplx_runtime_config
+
+    try:
+        from general_motion_retargeting.params import IK_CONFIG_DICT
+    except ImportError:
+        return
+    cfg_path = IK_CONFIG_DICT.get("smplx", {}).get(robot, "")
+    if not cfg_path:
+        return
+    p = Path(str(cfg_path))
+    if not p.exists():
+        return
+    with p.open() as f:
+        validate_smplx_runtime_config(json.load(f), p)
+
+
 def load_bvh(bvh_file: str, bvh_format: str) -> tuple[list, float, int]:
     from general_motion_retargeting.utils.lafan1 import load_lafan1_file
     from general_motion_retargeting.utils.soma import detect_soma_bvh, load_soma_bvh_file
