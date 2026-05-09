@@ -98,12 +98,16 @@ class TestLoadSmlxTemplateTpose:
             norm = float(np.linalg.norm(quat))
             assert abs(norm - 1.0) < 1e-6, f"{name} quat norm = {norm}"
 
-    def test_pelvis_orientation_is_identity(self):
+    def test_pelvis_orientation_is_smpl_to_mujoco(self):
+        from roboharness.alignment.smplx_coordinate import SMPL_TO_MUJOCO_QUAT
+
         frame, _height = load_smplx_template_tpose(_BODY_MODEL_ROOT)
         _, quat = frame["pelvis"]
-        np.testing.assert_allclose(quat, [1.0, 0.0, 0.0, 0.0], atol=1e-6)
+        np.testing.assert_allclose(quat, SMPL_TO_MUJOCO_QUAT, atol=1e-6)
 
-    def test_body_orientations_identity_at_zero_pose(self):
+    def test_body_orientations_carry_base_rotation_at_zero_pose(self):
+        from roboharness.alignment.smplx_coordinate import SMPL_TO_MUJOCO_QUAT
+
         frame, _height = load_smplx_template_tpose(_BODY_MODEL_ROOT)
         body_joints = [
             "pelvis",
@@ -133,9 +137,9 @@ class TestLoadSmlxTemplateTpose:
             _, quat = frame[name]
             np.testing.assert_allclose(
                 quat,
-                [1.0, 0.0, 0.0, 0.0],
+                SMPL_TO_MUJOCO_QUAT,
                 atol=1e-6,
-                err_msg=f"{name} orientation not identity at zero pose",
+                err_msg=f"{name} orientation not SMPL_TO_MUJOCO_QUAT at zero pose",
             )
 
     def test_human_height_reasonable(self):
@@ -172,7 +176,9 @@ class TestLoadSmlxTemplateTpose:
         assert 1.4 < height < 2.2
 
         _, q = frame["pelvis"]
-        np.testing.assert_allclose(q, [1.0, 0.0, 0.0, 0.0], atol=1e-6)
+        from roboharness.alignment.smplx_coordinate import SMPL_TO_MUJOCO_QUAT
+
+        np.testing.assert_allclose(q, SMPL_TO_MUJOCO_QUAT, atol=1e-6)
 
 
 class TestSolveSmplxOffsetsFromTemplate:
@@ -180,7 +186,7 @@ class TestSolveSmplxOffsetsFromTemplate:
         spec = {
             "robot": "test_robot",
             "xml_path": "/fake/path.xml",
-            "qpos": [0, 0, 0, 0.5, -0.5, -0.5, -0.5] + [0.0] * 29,
+            "qpos": [0, 0, 0, 1, 0, 0, 0] + [0.0] * 29,
             "links": {
                 "base_link": {
                     "pos": [0, 0, 0],
@@ -259,7 +265,7 @@ class TestSolveSmplxOffsetsFromTemplate:
                     f"{joint_name}: t1={t1[joint_name][4]} vs t2={t2[joint_name][4]}"
                 )
 
-    def test_removes_world_rotation(self, tmp_path: Path):
+    def test_preserves_world_rotation(self, tmp_path: Path):
         config_path = self._make_ik_config(tmp_path)
         spec_path = self._make_tpose_spec(tmp_path)
 
@@ -273,7 +279,63 @@ class TestSolveSmplxOffsetsFromTemplate:
             body_model_path=_BODY_MODEL_ROOT,
         )
 
+        assert "world_rotation" in solved
+        np.testing.assert_allclose(
+            solved["world_rotation"], [0.5, -0.5, -0.5, -0.5], atol=1e-10
+        )
+
+    def test_solver_does_not_inject_world_rotation(self, tmp_path: Path):
+        config_path = self._make_ik_config(tmp_path)
+        spec_path = self._make_tpose_spec(tmp_path)
+
+        config_json = json.loads(config_path.read_text())
+        assert "world_rotation" not in config_json
+
+        solved = solve_smplx_offsets_from_template(
+            ik_config_path=config_path,
+            tpose_spec_path=spec_path,
+            body_model_path=_BODY_MODEL_ROOT,
+        )
+
         assert "world_rotation" not in solved
+
+    def test_solver_applies_existing_world_rotation_before_offsets(self, tmp_path: Path):
+        from scipy.spatial.transform import Rotation as R
+
+        config_path = self._make_ik_config(tmp_path)
+        spec_path = self._make_tpose_spec(tmp_path)
+
+        r_wr = R.from_euler("z", 45, degrees=True)
+        wr_quat = [float(v) for v in r_wr.as_quat(scalar_first=True)]
+
+        config_with_wr = json.loads(config_path.read_text())
+        config_with_wr["world_rotation"] = wr_quat
+        config_path.write_text(json.dumps(config_with_wr))
+
+        solved = solve_smplx_offsets_from_template(
+            ik_config_path=config_path,
+            tpose_spec_path=spec_path,
+            body_model_path=_BODY_MODEL_ROOT,
+        )
+
+        q_offset = np.asarray(solved["ik_match_table1"]["base_link"][4], dtype=np.float64)
+        from roboharness.alignment.smplx_coordinate import SMPL_TO_MUJOCO_QUAT
+
+        r_human = r_wr * R.from_quat(SMPL_TO_MUJOCO_QUAT, scalar_first=True)
+        r_target = R.from_matrix(
+            np.asarray(
+                json.loads(spec_path.read_text())["links"]["base_link"]["R"],
+                dtype=np.float64,
+            )
+        )
+        expected_offset = (r_human.inv() * r_target).as_quat(scalar_first=True)
+        assert (
+            min(
+                float(np.linalg.norm(q_offset - expected_offset)),
+                float(np.linalg.norm(q_offset + expected_offset)),
+            )
+            < 1e-6
+        )
 
     def test_preserves_robot_root_name(self, tmp_path: Path):
         config_path = self._make_ik_config(tmp_path)
@@ -301,15 +363,12 @@ class TestSetupRobotSmplxTemplateCLI:
     def test_template_available_when_smplx_and_body_model(self):
         args = argparse.Namespace(
             src="smplx",
-            tpose_src="smplx",
             tpose_motion=None,
             skip_solve=False,
             skip_validate=False,
         )
         smplx_body_model_root = _BODY_MODEL_ROOT
-        smplx_template_available = (
-            args.src == "smplx" or args.tpose_src == "smplx"
-        ) and smplx_body_model_root is not None
+        smplx_template_available = args.src == "smplx" and smplx_body_model_root is not None
         assert smplx_template_available is True
 
     def test_no_tpose_motion_but_template_available_solves(self, tmp_path: Path):
@@ -318,7 +377,7 @@ class TestSetupRobotSmplxTemplateCLI:
         spec_data = {
             "robot": "test_robot",
             "xml_path": "/fake.xml",
-            "qpos": [0, 0, 0, 0.5, -0.5, -0.5, -0.5],
+            "qpos": [0, 0, 0, 1, 0, 0, 0],
             "links": {"base_link": {"pos": [0, 0, 0], "R": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]}},
         }
         spec_path.write_text(json.dumps(spec_data))
@@ -378,10 +437,9 @@ class TestValidatorTemplateMode:
 
 
 class TestSmplxCoordinatePolicyPreserved:
-    def test_stage_tpose_has_smplx_root_quat(self):
+    def test_stage_tpose_no_smplx_root_quat(self):
         source = Path("scripts/stage_tpose.py").read_text()
-        assert "SMPLX_BASE_ROTATION_QUAT" in source
-        assert 'args.src == "smplx"' in source
+        assert "SMPLX_BASE_ROTATION_QUAT" not in source
 
     def test_validator_no_apply_smplx_base_rotation(self):
         source = Path("examples/gmr_tpose_validate.py").read_text()
@@ -391,7 +449,7 @@ class TestSmplxCoordinatePolicyPreserved:
         source = Path("examples/gmr_alignment_agent.py").read_text()
         assert "apply_smplx_base_rotation" not in source
 
-    def test_solver_does_not_add_world_rotation(self, tmp_path: Path):
+    def test_solver_does_not_inject_world_rotation(self, tmp_path: Path):
         config = {
             "robot_root_name": "base_link",
             "human_root_name": "pelvis",
@@ -408,7 +466,7 @@ class TestSmplxCoordinatePolicyPreserved:
         spec = {
             "robot": "robot",
             "xml_path": "/fake.xml",
-            "qpos": [0, 0, 0, 0.5, -0.5, -0.5, -0.5],
+            "qpos": [0, 0, 0, 1, 0, 0, 0],
             "links": {
                 "base_link": {
                     "pos": [0, 0, 0],
@@ -425,7 +483,9 @@ class TestSmplxCoordinatePolicyPreserved:
             body_model_path=_BODY_MODEL_ROOT,
         )
 
-        assert "world_rotation" not in solved
+        assert "world_rotation" not in solved, (
+            "Solver must not inject world_rotation — that is compute_world_rotation's job"
+        )
         assert solved["robot_root_name"] == "base_link"
         assert solved["human_root_name"] == "pelvis"
 
@@ -463,7 +523,7 @@ class TestAgentDefaultSpecDiscovery:
         spec_data = {
             "robot": "test_robot",
             "xml_path": "/fake.xml",
-            "qpos": [0, 0, 0, 0.5, -0.5, -0.5, -0.5],
+            "qpos": [0, 0, 0, 1, 0, 0, 0],
             "links": {
                 "base_link": {"pos": [0, 0, 0], "R": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]},
             },

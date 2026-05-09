@@ -179,20 +179,18 @@ def main() -> int:
     if args.src in ("smplx",):
         import numpy as np
 
-        from roboharness._math_utils import SMPLX_BASE_ROTATION_QUAT
-
         root_quat = spec.get("qpos", [0] * 7)[3:7]
         root_quat = np.asarray(root_quat, dtype=np.float64)
         root_quat /= np.linalg.norm(root_quat) + 1e-12
-        base_quat = np.asarray(SMPLX_BASE_ROTATION_QUAT, dtype=np.float64)
-        dot = float(abs(np.dot(root_quat, base_quat)))
+        identity = np.array([1.0, 0.0, 0.0, 0.0])
+        dot = float(abs(np.dot(root_quat, identity)))
         angle_deg = float(np.degrees(2 * np.arccos(np.clip(dot, 0, 1))))
-        print(f"[validate] SMPL-X root quaternion angle from base rotation: {angle_deg:.2f}°")
+        print(f"[validate] SMPL-X root quaternion deviation from identity: {angle_deg:.2f}°")
         if angle_deg > 10.0:
             print(
-                "[validate] WARNING: spec root quaternion differs significantly "
-                "from SMPLX_BASE_ROTATION. Ensure the spec was staged with "
-                "`stage_tpose.py --src smplx`."
+                f"[validate] WARNING: SMPL-X root quaternion deviates {angle_deg:.2f}° "
+                "from identity. The robot may not be upright. "
+                "Re-stage the T-pose spec with stage_tpose.py --src smplx."
             )
 
     if args.use_smplx_template:

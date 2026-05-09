@@ -171,12 +171,16 @@ def register_in_params(
 
     modified = lines[:]
     for dict_name, entry_line, sub_key in entries:
+
+        def _has_active_entry(text_lines: list[str], key: str) -> bool:
+            return any(f'"{key}"' in ln and not ln.lstrip().startswith("#") for ln in text_lines)
+
         if sub_key is not None:
             bounds = _find_inner_dict_bounds(original.splitlines(True), dict_name, sub_key)
             if bounds is not None:
                 inner_start, inner_end = bounds
-                inner_text = "".join(original.splitlines(True)[inner_start : inner_end + 1])
-                if f'"{robot_name}"' in inner_text:
+                inner_lines = original.splitlines(True)[inner_start : inner_end + 1]
+                if _has_active_entry(inner_lines, robot_name):
                     diff_lines.append(
                         f"  SKIP {dict_name}[{sub_key}]: {robot_name} already present"
                     )
@@ -192,8 +196,8 @@ def register_in_params(
                         start_idx = i
                         break
                 if start_idx is not None:
-                    dict_text = "".join(lines_for_check[start_idx : close_idx + 1])
-                    if f'"{robot_name}"' in dict_text:
+                    dict_lines = lines_for_check[start_idx : close_idx + 1]
+                    if _has_active_entry(dict_lines, robot_name):
                         diff_lines.append(f"  SKIP {dict_name}: {robot_name} already present")
                         continue
 

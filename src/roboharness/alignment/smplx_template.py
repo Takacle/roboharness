@@ -104,8 +104,10 @@ def load_smplx_template_tpose(
     -------
     frame:
         ``{joint_name: (position_3d, quat_wxyz)}`` where quaternions are
-        scalar-first ``[w, x, y, z]`` and positions are in SMPL-X world
-        coordinates (Y-up, X-left, Z-forward).
+        scalar-first ``[w, x, y, z]`` and positions are in **Z-up MuJoCo
+        coordinates** (X=forward, Y=left, Z=up).  The Y-up → Z-up conversion
+        is applied internally so callers receive data already in the robot's
+        frame convention.
     human_height:
         Deterministic height estimate for scaling.
     """
@@ -166,6 +168,10 @@ def load_smplx_template_tpose(
         pos = joints[i].copy()
         quat = rot.as_quat(scalar_first=True)
         frame[joint_name] = (pos, quat)
+
+    from roboharness.alignment.smplx_coordinate import smpl_to_mujoco_frame
+
+    frame = smpl_to_mujoco_frame(frame)
 
     height = 1.66 + 0.1 * float(betas[0])
 

@@ -325,7 +325,7 @@ class TestSmplxValidationNotSkipped:
             tpose_motion="/path/to/tpose.bvh",
             skip_solve=False,
             skip_validate=False,
-            tpose_src="smplx",
+            src="smplx",
         )
         defaults.update(overrides)
         return argparse.Namespace(**defaults)
@@ -346,7 +346,7 @@ class TestSmplxValidationNotSkipped:
         assert should_validate is False
 
     def test_bvh_validates_by_default(self):
-        args = self._make_args(tpose_src="bvh")
+        args = self._make_args(src="bvh")
         should_validate = args.tpose_motion and not args.skip_solve and not args.skip_validate
         assert should_validate is True
 
@@ -407,8 +407,6 @@ class TestValidationCommandConstructed:
                 "smplx_robot",
                 "--tpose_motion",
                 "/path/to/tpose.npz",
-                "--tpose_src",
-                "smplx",
                 "--formats",
                 "smplx",
             ]
@@ -446,8 +444,6 @@ class TestValidationCommandConstructed:
                 "smplx_robot",
                 "--tpose_motion",
                 "/path/to/tpose.npz",
-                "--tpose_src",
-                "smplx",
                 "--formats",
                 "smplx",
             ]
@@ -486,8 +482,6 @@ class TestValidationCommandConstructed:
                 "smplx_robot",
                 "--tpose_motion",
                 "/path/to/tpose.npz",
-                "--tpose_src",
-                "smplx",
                 "--formats",
                 "smplx",
                 "--skip_validate",
@@ -529,7 +523,7 @@ class TestStageCommandConstructed:
         ik_config_path.write_text("{}")
         return gmr_root
 
-    def test_stage_command_uses_tpose_src(self, tmp_path):
+    def test_stage_command_uses_src(self, tmp_path):
         gmr_root = self._make_gmr_tree(tmp_path)
 
         mock_run = MagicMock()
@@ -552,8 +546,6 @@ class TestStageCommandConstructed:
                 "smplx_robot",
                 "--tpose_motion",
                 "/path/to/tpose.npz",
-                "--tpose_src",
-                "smplx",
                 "--formats",
                 "smplx",
                 "--skip_validate",
@@ -568,6 +560,140 @@ class TestStageCommandConstructed:
         cmd = stage_calls[0][0][0]
         assert "--src" in cmd
         assert cmd[cmd.index("--src") + 1] == "smplx"
+
+    def test_stage_command_passes_user_qpos(self, tmp_path):
+        gmr_root = self._make_gmr_tree(tmp_path)
+
+        mock_run = MagicMock()
+        mock_run.return_value = MagicMock(returncode=0, stdout="line1\nline2\nline3", stderr="")
+
+        qpos = "0 0 0.8 1 0 0 0"
+        with (
+            patch("scripts.setup_robot.GMR_ROOT", gmr_root),
+            patch("scripts.setup_robot.extract_xml_body_names", return_value=["pelvis", "torso"]),
+            patch("scripts.setup_robot.register_in_params", return_value=[]),
+            patch("scripts.setup_robot.update_script_choices", return_value=[]),
+            patch("scripts.setup_robot._solve_smplx_offsets", return_value=True),
+            patch("scripts.setup_robot.subprocess.run", mock_run),
+            patch("sys.stdout", new_callable=StringIO),
+        ):
+            import scripts.setup_robot as mod
+
+            test_args = [
+                "setup_robot.py",
+                "--robot",
+                "smplx_robot",
+                "--src",
+                "smplx",
+                "--formats",
+                "smplx",
+                "--tpose_qpos",
+                qpos,
+                "--skip_solve",
+                "--skip_validate",
+            ]
+            with patch("sys.argv", test_args):
+                mod.main()
+
+        stage_calls = [
+            c for c in mock_run.call_args_list if any("stage_tpose" in str(a) for a in c[0])
+        ]
+        assert len(stage_calls) == 1
+        cmd = stage_calls[0][0][0]
+        assert "--qpos" in cmd
+        assert cmd[cmd.index("--qpos") + 1] == qpos
+
+    def test_stage_command_passes_user_qpos_file(self, tmp_path):
+        gmr_root = self._make_gmr_tree(tmp_path)
+        qpos_file = tmp_path / "custom_tpose.json"
+        qpos_file.write_text(json.dumps({"qpos": [0, 0, 0.8, 1, 0, 0, 0]}))
+
+        mock_run = MagicMock()
+        mock_run.return_value = MagicMock(returncode=0, stdout="line1\nline2\nline3", stderr="")
+
+        with (
+            patch("scripts.setup_robot.GMR_ROOT", gmr_root),
+            patch("scripts.setup_robot.extract_xml_body_names", return_value=["pelvis", "torso"]),
+            patch("scripts.setup_robot.register_in_params", return_value=[]),
+            patch("scripts.setup_robot.update_script_choices", return_value=[]),
+            patch("scripts.setup_robot._solve_smplx_offsets", return_value=True),
+            patch("scripts.setup_robot.subprocess.run", mock_run),
+            patch("sys.stdout", new_callable=StringIO),
+        ):
+            import scripts.setup_robot as mod
+
+            test_args = [
+                "setup_robot.py",
+                "--robot",
+                "smplx_robot",
+                "--src",
+                "smplx",
+                "--formats",
+                "smplx",
+                "--tpose_qpos_file",
+                str(qpos_file),
+                "--skip_solve",
+                "--skip_validate",
+            ]
+            with patch("sys.argv", test_args):
+                mod.main()
+
+        stage_calls = [
+            c for c in mock_run.call_args_list if any("stage_tpose" in str(a) for a in c[0])
+        ]
+        assert len(stage_calls) == 1
+        cmd = stage_calls[0][0][0]
+        assert "--qpos_file" in cmd
+        assert cmd[cmd.index("--qpos_file") + 1] == str(qpos_file)
+
+    def test_stage_command_runs_for_joint_only_tpose(self, tmp_path):
+        gmr_root = self._make_gmr_tree(tmp_path)
+
+        mock_run = MagicMock()
+        mock_run.return_value = MagicMock(returncode=0, stdout="line1\nline2\nline3", stderr="")
+
+        left_shoulder = "LINK_SHOULDER_ROLL_L=1.57"
+        right_shoulder = "LINK_SHOULDER_ROLL_R=-1.57"
+        with (
+            patch("scripts.setup_robot.GMR_ROOT", gmr_root),
+            patch("scripts.setup_robot.extract_xml_body_names", return_value=["pelvis", "torso"]),
+            patch("scripts.setup_robot.register_in_params", return_value=[]),
+            patch("scripts.setup_robot.update_script_choices", return_value=[]),
+            patch("scripts.setup_robot._solve_smplx_offsets", return_value=True),
+            patch("scripts.setup_robot.subprocess.run", mock_run),
+            patch("sys.stdout", new_callable=StringIO),
+        ):
+            import scripts.setup_robot as mod
+
+            test_args = [
+                "setup_robot.py",
+                "--robot",
+                "smplx_robot",
+                "--src",
+                "smplx",
+                "--formats",
+                "smplx",
+                "--tpose_preset",
+                "home",
+                "--tpose_joint",
+                left_shoulder,
+                "--tpose_joint",
+                right_shoulder,
+                "--skip_solve",
+                "--skip_validate",
+            ]
+            with patch("sys.argv", test_args):
+                mod.main()
+
+        stage_calls = [
+            c for c in mock_run.call_args_list if any("stage_tpose" in str(a) for a in c[0])
+        ]
+        assert len(stage_calls) == 1
+        cmd = stage_calls[0][0][0]
+        assert "--preset" in cmd
+        assert cmd[cmd.index("--preset") + 1] == "home"
+        joint_indices = [i for i, value in enumerate(cmd) if value == "--joint"]
+        assert [cmd[i + 1] for i in joint_indices] == [left_shoulder, right_shoulder]
 
 
 class TestConfigWritesToGmrRoot:

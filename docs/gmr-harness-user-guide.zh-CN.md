@@ -85,7 +85,7 @@ python scripts/setup_robot.py \
     --auto_register --update_scripts
 ```
 
-自动执行：配置生成 → 注册 → T-pose 采集 → 偏移求解 → 验证。
+自动执行：配置生成 → 注册 →  采集 → 偏移求解 → 验证。
 
 ### 3.3 从已有机器人克隆
 
@@ -406,7 +406,7 @@ ls specs/tpose/unitree_g1.json
 
 # 2. VLM 迭代
 python examples/gmr_alignment_agent.py \
-    --robot unitree_g1 \
+    --robot v11 \
     --motion_file /path/to/motion.bvh \
     --src bvh \
     --tpose_spec specs/tpose/unitree_g1.json \
@@ -448,7 +448,7 @@ ls $GMR_ROOT/assets/body_models/smplx/SMPLX_MALE.npz
 | 原因 | 检查 |
 |------|------|
 | 使用行走 `.npz` 作为校准源 | 改用模板校准（`--use_smplx_template`） |
-| SMPL-X 配置含有 `world_rotation` | 确认 `smplx_to_*.json` 中无此 key |
+| SMPL-X 配置缺少 `world_rotation` 或使用旧的组合旋转 | 重新执行 `setup_robot.py --src smplx --auto_register --update_scripts`，确认 `smplx_to_*.json` 中包含新的 base runtime `world_rotation` |
 | T-pose 规格未用 SMPL-X 源采集 | 重新执行 `stage_tpose.py --src smplx` |
 
 ### `setup_robot.py` 报 XML 不在正确位置

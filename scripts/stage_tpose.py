@@ -51,7 +51,6 @@ import numpy as np
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent / "src"))
 
-from roboharness._math_utils import SMPLX_BASE_ROTATION_QUAT  # noqa: E402
 from roboharness.alignment._gmr_params import load_gmr_params  # noqa: E402
 from roboharness.alignment._gmr_path import find_gmr_root  # noqa: E402
 from roboharness.alignment.orientation_aligner import extract_xml_body_names  # noqa: E402
@@ -63,6 +62,7 @@ def _resolve_robot(robot: str, src: str) -> tuple[Path, list[str], float]:
     """Return (xml_path, controlled_link_names, viewer_cam_distance) from GMR."""
     params = load_gmr_params(GMR_ROOT)
     xml_path = Path(str(params.ROBOT_XML_DICT[robot]))
+    cam_distance = float(params.VIEWER_CAM_DISTANCE_DICT.get(robot, 2.5))
 
     # IK config provides the canonical link list. When missing (new robot),
     # extract body names directly from the XML.
@@ -71,8 +71,25 @@ def _resolve_robot(robot: str, src: str) -> tuple[Path, list[str], float]:
     except KeyError:
         print(f"[stage_tpose] No IK config for {robot}/{src}; extracting body names from XML.")
         link_names = extract_xml_body_names(xml_path)
-        cam_distance = float(params.VIEWER_CAM_DISTANCE_DICT.get(robot, 2.5))
         return xml_path, link_names, cam_distance
+
+    if not ik_config_path.exists():
+        fallback_path = (
+            GMR_ROOT / "general_motion_retargeting" / "ik_configs" / (f"{src}_to_{robot}.json")
+        )
+        if fallback_path.exists():
+            print(
+                f"[stage_tpose] WARN: registered IK config missing: {ik_config_path}. "
+                f"Using generated config: {fallback_path}"
+            )
+            ik_config_path = fallback_path
+        else:
+            print(
+                f"[stage_tpose] WARN: IK config not found at {ik_config_path}; "
+                "extracting body names from XML."
+            )
+            link_names = extract_xml_body_names(xml_path)
+            return xml_path, link_names, cam_distance
 
     with ik_config_path.open() as f:
         ik_config = json.load(f)
@@ -81,7 +98,6 @@ def _resolve_robot(robot: str, src: str) -> tuple[Path, list[str], float]:
         set(ik_config.get("ik_match_table1", {}).keys())
         | set(ik_config.get("ik_match_table2", {}).keys())
     )
-    cam_distance = float(params.VIEWER_CAM_DISTANCE_DICT.get(robot, 2.5))
     return xml_path, link_names, cam_distance
 
 
@@ -93,6 +109,18 @@ _TPOSE_SHOULDER_RADS = 1.5708  # ±π/2
 _TPOSE_ELBOW_RADS = 1.5708  # π/2
 
 
+def _axis_close(axis: tuple[float, ...], target: tuple[float, ...], tol: float = 0.1) -> bool:
+    return all(abs(a - t) < tol for a, t in zip(axis, target, strict=False))
+
+
+def _detect_side(jname_lower: str) -> float:
+    if "left" in jname_lower or jname_lower.endswith("_l") or "_l_" in jname_lower:
+        return 1.0
+    if "right" in jname_lower or jname_lower.endswith("_r") or "_r_" in jname_lower:
+        return -1.0
+    return 0.0
+
+
 def _detect_tpose_overrides(model: Any, robot_name: str) -> dict[str, float]:
     """Auto-detect T-pose joint overrides from axis semantics.
 
@@ -101,6 +129,9 @@ def _detect_tpose_overrides(model: Any, robot_name: str) -> dict[str, float]:
     returns {joint_name: rad_value} overrides to raise arms to T-pose.
 
     Works for any humanoid robot regardless of naming convention.
+    Side detection recognises ``left``/``right`` as well as ``_L``/``_R``
+    suffixes.  Axis matching uses a tolerance to handle joints with
+    slightly tilted axes (e.g. ``axis="0 0.998 0.063"`` ≈ Y-axis).
     """
     import mujoco
 
@@ -112,18 +143,16 @@ def _detect_tpose_overrides(model: Any, robot_name: str) -> dict[str, float]:
             continue
         axis = tuple(float(model.jnt_axis[jid][i]) for i in range(3))
         jname_lower = jname.lower()
+        side = _detect_side(jname_lower)
 
-        # Detect side: left / right
-        side = 0.0  # 0 = unknown, +1 = left, -1 = right
-        if "left" in jname_lower:
-            side = 1.0
-        elif "right" in jname_lower:
-            side = -1.0
-
-        if axis == _SHOULDER_ROLL_AXIS and "shoulder" in jname_lower:
+        if (
+            _axis_close(axis, _SHOULDER_ROLL_AXIS)
+            and "shoulder" in jname_lower
+            and "roll" in jname_lower
+        ):
             if side != 0.0:
                 overrides[jname] = _TPOSE_SHOULDER_RADS * side
-        elif axis == _ELBOW_AXIS and "elbow" in jname_lower:
+        elif _axis_close(axis, _ELBOW_AXIS) and "elbow" in jname_lower and "pitch" in jname_lower:
             overrides[jname] = _TPOSE_ELBOW_RADS
 
     if not overrides:
@@ -258,6 +287,22 @@ def _snapshot_spec(
         "qpos": qpos.tolist(),
         "links": links,
     }
+
+
+def _guard_qpos_input_not_output(qpos_file: Path | None, spec_path: Path) -> None:
+    """Avoid overwriting the user-authored qpos source spec in place."""
+    if qpos_file is None:
+        return
+    try:
+        same_path = qpos_file.resolve() == spec_path.resolve()
+    except FileNotFoundError:
+        same_path = qpos_file.absolute() == spec_path.absolute()
+    if same_path:
+        raise ValueError(
+            "--qpos_file must not be the same path as the output spec. "
+            f"Input and output both resolve to {spec_path}. "
+            "Use a separate qpos source file or a different --output_dir."
+        )
 
 
 def _render_reference_views(
@@ -480,23 +525,14 @@ def main() -> None:
         robot_name=robot_name,
     )
 
-    if (
-        args.src == "smplx"
-        and args.qpos is None
-        and args.qpos_file is None
-        and model.nq >= 7
-        and int(model.jnt_type[0]) == 0
-    ):
-        qpos[3:7] = SMPLX_BASE_ROTATION_QUAT
-        print(f"[stage_tpose] Applied SMPL-X base root quaternion: {SMPLX_BASE_ROTATION_QUAT}")
-
     if args.preview:
         qpos = _preview_in_viewer(xml_path, qpos)
 
     # Snapshot + write
-    spec = _snapshot_spec(robot_name, xml_path, qpos, link_names)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     spec_path = args.output_dir / f"{robot_name}.json"
+    _guard_qpos_input_not_output(args.qpos_file, spec_path)
+    spec = _snapshot_spec(robot_name, xml_path, qpos, link_names)
     with spec_path.open("w") as f:
         json.dump(spec, f, indent=2)
     print(f"[stage_tpose] wrote spec {spec_path} ({len(spec['links'])} links)")

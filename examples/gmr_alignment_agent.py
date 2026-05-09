@@ -801,16 +801,10 @@ def main() -> None:
         "the VLM prompt.",
     )
     parser.add_argument(
-        "--tpose_src",
-        default=None,
-        choices=["bvh", "smplx", "fbx_offline"],
-        help="Source format for --tpose_motion (default: same as --src).",
-    )
-    parser.add_argument(
         "--tpose_bvh_format",
         default="auto",
         choices=["auto", "lafan1", "soma"],
-        help="BVH parser for --tpose_motion when --tpose_src=bvh.",
+        help="BVH parser for --tpose_motion when --src=bvh.",
     )
     parser.add_argument(
         "--tpose_threshold",
@@ -882,8 +876,6 @@ def main() -> None:
         ),
     )
     args = parser.parse_args()
-    if args.tpose_src is None:
-        args.tpose_src = args.src
 
     from general_motion_retargeting.params import (
         IK_CONFIG_DICT,
@@ -1076,7 +1068,7 @@ def main() -> None:
             return
 
         print("[agent] Solve mode: computing direct IK config from human bone orientations...")
-        tpose_frames, _, _ = load_motion(args.tpose_src, args.tpose_motion, args.tpose_bvh_format)
+        tpose_frames, _, _ = load_motion(args.src, args.tpose_motion, args.tpose_bvh_format)
         tpose_frame = tpose_frames[0]
 
         retargeter = GMR(
@@ -1166,7 +1158,7 @@ def main() -> None:
 
         print("[agent] Retargeting T-pose with new config...")
         tpose_qpos = _retarget_tpose_qpos(
-            args.tpose_src, args.tpose_motion, args.robot, args.tpose_bvh_format
+            args.src, args.tpose_motion, args.robot, args.tpose_bvh_format
         )
         report_new = compute_deviations(tpose_qpos, tpose_spec["xml_path"], tpose_spec)
         new_total = total_deviation(report_new)
@@ -1199,9 +1191,7 @@ def main() -> None:
 
         print("[agent] Pre-loading retargeter and MuJoCo model...")
 
-        tpose_frames, actual_h, _ = load_motion(
-            args.tpose_src, args.tpose_motion, args.tpose_bvh_format
-        )
+        tpose_frames, actual_h, _ = load_motion(args.src, args.tpose_motion, args.tpose_bvh_format)
         tpose_frame = tpose_frames[0]
         scale_table = config.get("human_scale_table", {})
         bones = sorted(scale_table.keys())
@@ -1298,7 +1288,7 @@ def main() -> None:
 
             print("[agent] Retargeting T-pose for numeric gate...")
             tpose_qpos = _retarget_tpose_qpos(
-                args.tpose_src,
+                args.src,
                 args.tpose_motion,
                 args.robot,
                 args.tpose_bvh_format,
@@ -1406,7 +1396,7 @@ def main() -> None:
             )
 
             tpose_qpos_post = _retarget_tpose_qpos(
-                args.tpose_src, args.tpose_motion, args.robot, args.tpose_bvh_format
+                args.src, args.tpose_motion, args.robot, args.tpose_bvh_format
             )
             report_post = compute_deviations(tpose_qpos_post, tpose_spec["xml_path"], tpose_spec)
             pos_report_post = compute_position_deviations(

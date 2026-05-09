@@ -104,6 +104,8 @@ def axis_angle_to_quat(axis: list[float], angle_deg: float) -> list[float]:
     return [math.cos(half), axis[0] * s, axis[1] * s, axis[2] * s]
 
 
-# Frame-conversion quaternion: SMPL-X Y-up right-handed → MuJoCo Z-up.
-# Equivalent to a 180° rotation about the ⟨-1,-1,-1⟩ axis.
+# .. deprecated::
+#   Use ``SMPL_TO_MUJOCO_QUAT`` from ``roboharness.alignment.smplx_coordinate``
+#   instead. This constant uses the historical row-vector convention; the new
+#   constant is in runtime form and requires no ``.inv()`` call.
 SMPLX_BASE_ROTATION_QUAT: list[float] = [0.5, -0.5, -0.5, -0.5]

@@ -8,10 +8,9 @@ The human convention used depends on ``src_format``:
 
 * ``"bvh"`` — after the BVH/LAFAN1 loader, the coordinate axes are
   X=right, Y=forward, Z=up.
-* ``"smplx"`` — the SMPL-X convention (X=right, Y=up, Z=forward) is
-  incompatible with a pure rotation for the typical robot (X=forward,
-  Z=up).  The IK solver handles the alignment via the root's free
-  joint, so we return ``None``.
+* ``"smplx"`` — raw SMPL-X data is Y-up.  ``world_rotation`` uses the
+  SMPL-X base conversion so the human data is rotated into the robot's
+  Z-up world frame before IK, while the robot root stays upright.
 
 Supports robots with missing arms, head, or legs via fallback logic.
 """
@@ -142,9 +141,6 @@ def compute_world_rotation(
     ``[w, x, y, z]`` quaternion list (scalar-first), or ``None`` when no
     rotation is needed / cannot be determined.
     """
-    if src_format in ("smplx",):
-        return None
-
     positions = _collect_body_positions(xml_path)
 
     # ── locate key landmarks ──
@@ -187,11 +183,23 @@ def compute_world_rotation(
     robot_left = normalize_vector(lat_raw)
 
     # ── robot forward ──
-    # Post-loader convention for BVH/FBX: X=left, Y=forward, Z=up
-    # forward = cross(up, left)  →  robot's -X direction (backward)
-    robot_forward = normalize_vector(np.cross(robot_up, robot_left))
-    robot_left = normalize_vector(np.cross(robot_forward, robot_up))
-    robot_frame = np.column_stack([robot_left, robot_forward, robot_up])
+    # Build human-to-robot frame matrix.  The column ordering depends on the
+    # post-loader convention of the source format so that the frame matrix is
+    # a proper rotation (det > 0).
+    #
+    # BVH/FBX post-loader: X=left, Y=forward, Z=up
+    #   left x forward = up  ->  forward = cross(up, left), then re-orthogonalise.
+    #
+    # SMPLX post-conversion: X=forward, Y=left, Z=up
+    #   forward x left = up  ->  forward = cross(left, up), then re-orthogonalise.
+    if src_format in ("smplx",):
+        robot_forward = normalize_vector(np.cross(robot_left, robot_up))
+        robot_left = normalize_vector(np.cross(robot_up, robot_forward))
+        robot_frame = np.column_stack([robot_forward, robot_left, robot_up])
+    else:
+        robot_forward = normalize_vector(np.cross(robot_up, robot_left))
+        robot_left = normalize_vector(np.cross(robot_forward, robot_up))
+        robot_frame = np.column_stack([robot_left, robot_forward, robot_up])
 
     # Ensure a proper rotation (det = +1) via SVD projection.
     U, _, Vt = np.linalg.svd(robot_frame)
@@ -200,7 +208,6 @@ def compute_world_rotation(
         Vt[-1, :] *= -1
         R_mat = U @ Vt
 
-    # Skip if the rotation is effectively identity.
     if np.allclose(R_mat, np.eye(3), atol=1e-4):
         return None
 
@@ -242,14 +249,18 @@ def parse_world_rotation_arg(value: str) -> list[float]:
 
 
 def extract_xml_body_names(xml_path: Path) -> list[str]:
-    """Extract all body names from a MuJoCo XML file via regex.
+    """Extract all body names from a MuJoCo XML file.
 
-    This is a lightweight alternative to ``_collect_body_positions`` for
-    cases where only body names are needed, not world-space positions.
+    Handles ``<include>`` elements by recursively merging included XMLs
+    before extracting names.
     """
     import re
 
-    return sorted(set(re.findall(r'<body\s+name="([^"]+)"', xml_path.read_text())))
+    tree = ET.parse(str(xml_path))
+    root = tree.getroot()
+    _resolve_includes(root, xml_path.parent)
+    xml_text = ET.tostring(root, encoding="unicode")
+    return sorted(set(re.findall(r'<body\s+[^>]*name="([^"]+)"', xml_text)))
 
 
 def apply_smplx_base_rotation(spec: dict) -> dict:
@@ -258,13 +269,18 @@ def apply_smplx_base_rotation(spec: dict) -> dict:
     The SMPL-X coordinate frame (Y-up, X=left) differs from MuJoCo (Z-up, X=forward).
     This helper applies the conversion so that downstream ``compute_direct_patch``
     and ``compute_deviations`` operate in a consistent frame.
+
+    .. deprecated::
+        This function is no longer used.  SMPL-X frame conversion is now handled
+        via ``world_rotation`` in the IK config and the pipeline in
+        ``smplx_offset_solver``.  Kept for backward compatibility.
     """
     import numpy as np
     from scipy.spatial.transform import Rotation as R
 
-    from roboharness._math_utils import SMPLX_BASE_ROTATION_QUAT
+    from roboharness.alignment.smplx_coordinate import SMPL_TO_MUJOCO_QUAT
 
-    r_base = R.from_quat(SMPLX_BASE_ROTATION_QUAT, scalar_first=True)
+    r_base = R.from_quat(SMPL_TO_MUJOCO_QUAT, scalar_first=True)
     mat_base = r_base.as_matrix()
     mod_links: dict[str, dict] = {}
     for name, info in spec.get("links", {}).items():

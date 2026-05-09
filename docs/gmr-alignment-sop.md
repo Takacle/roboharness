@@ -72,7 +72,7 @@ python scripts/stage_tpose.py --robot unitree_g1 \
     --qpos "0 0 0.793  1 0 0 0  ..." \
     --output_dir specs/tpose/
 
-# Option C: SMPL-X source — auto-stages root quaternion [0.5, -0.5, -0.5, -0.5].
+# Option C: SMPL-X source — auto-stages identity root quaternion [1, 0, 0, 0].
 python scripts/stage_tpose.py --robot my_robot --src smplx \
     --output_dir specs/tpose/
 ```
@@ -242,7 +242,7 @@ the metric already found.
 | `total_deviation` oscillates between two values | Patch and its inverse applied alternately | Log the last 3 patch quaternions; if they include `q` and `q.conjugate`, freeze the loop |
 | One link always reports 90° no matter what | Missing `table2` mirror — IK pulls joint back | Diff `table1[joint][4]` vs `table2[joint][4]` |
 | All links report the same 90° rotation | `world_rotation` needed at top level, not per joint | Patch `world_rotation`, zero out per-joint offsets |
-| All links report ~90-120° with SMPL-X source | SMPL-X does not use `world_rotation` — see §11 | Ensure `world_rotation` key is absent from `smplx_to_*.json`; use template calibration (§10) instead of motion-based solving |
+| All links report ~90-120° with SMPL-X source | SMPL-X `world_rotation` not computed, stale, or missing from config | Ensure `compute_world_rotation` returns the SMPL-X base runtime rotation only; verify `world_rotation` key is present in `smplx_to_*.json` |
 | Non-arm links drift after an arm patch | Root-relative chain propagation (see `test_single_joint_perturbation_localizes`) | Expected: a shoulder rotation moves the whole arm-hand chain in the report |
 | Identity check fails (`spec.qpos` replayed gives non-zero deviation) | Spec XML differs from `--xml` used at runtime | Confirm `spec['xml_path']` is what you loaded |
 
@@ -346,15 +346,14 @@ python examples/gmr_tpose_validate.py \
 | 格式 | world_rotation 策略 | 原因 |
 |------|-------------------|------|
 | **BVH / FBX** | 自动检测并写入 config | BVH post-loader 惯例 `(X=left, Y=forward, Z=up)`，可与 robot 坐标轴通过纯旋转对齐 |
-| **SMPL-X** | 不写入（config 中无此 key） | SMPL-X 惯例 `(X=right, Y=up, Z=forward)` 与 robot `(X=forward, Y=left, Z=up)` 左右手性相反，纯旋转无法对齐三个轴；IK solver 的 root free joint（6-DoF）在求解时自动处理全局朝向。模板校准（§10）确保 offsets 正确 |
+| **SMPL-X** | 自动写入 config（base runtime rotation only） | SMPL-X 惯例 `(Y=up, X=left, Z=forward)` 由 base rotation 转为 MuJoCo world `(Z=up, Y=left, X=forward)`。不要再乘 `R_mat`，因为 `R_mat` 基于 BVH canonical frame，会交换 SMPL-X 的 left/forward 轴。模板校准（§10）在同一 Z-up 帧下求解 offsets，与 runtime `apply_world_rotation` 一致 |
 
-SMPL-X 源格式的 T-pose spec 有专用辅助函数：
-`from roboharness.alignment.orientation_aligner import apply_smplx_base_rotation`。
-该函数将 `_math_utils.SMPLX_BASE_ROTATION_QUAT` 常数应用于 spec 中所有 `R` 矩阵。
+SMPL-X 源格式的 T-pose spec 的 root qpos 为 identity `[1, 0, 0, 0]`（机器人直立），
+`world_rotation` 在 IK config 中负责将 SMPL-X Y-up 人体数据旋转到 robot Z-up 帧。
 
-> **注意**: 模板校准流程（`smplx_offset_solver`）不会对 spec 调用 `apply_smplx_base_rotation`。
-> 模板帧的 quaternion 保持在 SMPL-X 惯例（Y-up），求解的 offsets 直接桥接到机器人 T-pose
-> spec 的 `R` 矩阵（已包含 SMPLX base rotation）。
+> **注意**: 模板校准流程（`smplx_offset_solver`）会在内部对 template frame 做 Y-up→Z-up
+> 转换后再求解 offsets。求解后的 config 保留 `world_rotation`，以便 runtime 的
+> `apply_world_rotation` 对实际运动数据做相同变换。
 
 ### 手动覆盖
 

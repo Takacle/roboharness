@@ -16,6 +16,11 @@ Usage examples::
         --tpose_motion /path/to/tpose.bvh \
         --auto_register --update_scripts
 
+    # Stage a user-authored numeric T-pose qpos instead of the built-in preset
+    python scripts/setup_robot.py --robot unitree_h1 \
+        --tpose_qpos_file specs/tpose/unitree_h1.json \
+        --auto_register --update_scripts
+
     # Clone from existing robot (same format only)
     python scripts/setup_robot.py --robot my_robot \
         --clone_from unitree_h1 \
@@ -44,6 +49,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 _HERE = Path(__file__).resolve().parent
 _PROJECT = _HERE.parent
@@ -155,23 +161,28 @@ def _solve_smplx_offsets(
     robot: str,
     tpose_spec_path: Path,
     body_model_root: Path | None = None,
+    *,
+    xml_path: Path | None = None,
+    skeleton: Any | None = None,
+    body_names: list[str] | None = None,
+    root_body: str = "pelvis",
 ) -> bool:
     params = load_gmr_params(GMR_ROOT)
     ik_dict = getattr(params, "IK_CONFIG_DICT", {})
     config_path = Path(str(ik_dict.get("smplx", {}).get(robot, "")))
     if not config_path.exists():
-        offsets_script = GMR_ROOT / "scripts" / "compute_smplx_tpose_offsets.py"
-        if offsets_script.exists():
-            cmd = [sys.executable, str(offsets_script), "--robot", robot, "--generate"]
-            result = subprocess.run(cmd, capture_output=False, text=True)
-            if result.returncode != 0:
-                print("[setup] ERROR: SMPL-X offset computation failed.")
-                return False
-            params = load_gmr_params(GMR_ROOT)
-            ik_dict = getattr(params, "IK_CONFIG_DICT", {})
-            config_path = Path(str(ik_dict.get("smplx", {}).get(robot, "")))
+        if xml_path is not None and skeleton is not None and body_names is not None:
+            from roboharness.alignment.body_matcher import match_bodies
+
+            match = match_bodies(body_names, skeleton, root_body_hint=root_body)
+            config = generate_ik_config(match, skeleton, xml_path=xml_path, src_format="smplx")
+            config_path = write_ik_config(config, robot, "smplx")
+            print(f"[setup] Generated SMPL-X IK config: {config_path}")
         else:
-            print(f"[setup] ERROR: IK config not found at {config_path}")
+            print(
+                f"[setup] ERROR: IK config not found at {config_path}. "
+                "Run the body-matching step (--formats smplx) before solving offsets."
+            )
             return False
 
     if not tpose_spec_path.exists():
@@ -200,15 +211,13 @@ def _solve_via_agent(args: argparse.Namespace, spec_path: Path) -> bool:
         "--robot",
         args.robot,
         "--src",
-        args.tpose_src,
+        args.src,
         "--motion_file",
         args.tpose_motion,
         "--tpose_spec",
         str(spec_path),
         "--tpose_motion",
         args.tpose_motion,
-        "--tpose_src",
-        args.tpose_src,
         "--tpose_bvh_format",
         args.bvh_format,
         "--solve_mode",
@@ -265,12 +274,6 @@ def main() -> None:
     )
     parser.add_argument("--tpose_motion", help="T-pose source motion (BVH/SMPL-X)")
     parser.add_argument(
-        "--tpose_src",
-        default=None,
-        choices=["bvh", "smplx", "fbx_offline"],
-        help="Source format for --tpose_motion (default: auto-detect from extension)",
-    )
-    parser.add_argument(
         "--tpose_preset",
         default="tpose",
         choices=["home", "tpose"],
@@ -283,7 +286,17 @@ def main() -> None:
         metavar="NAME=VALUE",
         help="Override a joint angle for T-pose staging, repeatable",
     )
-    parser.add_argument("--src", default="bvh", choices=["bvh", "smplx", "fbx_offline"])
+    parser.add_argument(
+        "--tpose_qpos",
+        help="Whitespace-separated full qpos vector for T-pose staging. "
+        "Bypasses --tpose_preset and --tpose_joint.",
+    )
+    parser.add_argument(
+        "--tpose_qpos_file",
+        type=Path,
+        help="Path to a JSON file containing a qpos field for T-pose staging. "
+        "Bypasses --tpose_preset and --tpose_joint.",
+    )
     parser.add_argument("--bvh_format", default="auto", choices=["auto", "lafan1", "soma"])
     parser.add_argument("--world_rot", default="", help="world_rotation (e.g. '90,0,0,1')")
     parser.add_argument(
@@ -300,24 +313,30 @@ def main() -> None:
         "--skip_validate", action="store_true", help="Skip validation after solving"
     )
     parser.add_argument("--dry_run", action="store_true")
+    parser.add_argument(
+        "--src",
+        default=None,
+        choices=["bvh", "smplx", "fbx_offline"],
+        help="Source format (auto-detected from --tpose_motion extension or --formats, "
+        "fallback: bvh)",
+    )
     args = parser.parse_args()
 
-    if args.tpose_src is None and args.tpose_motion:
+    if args.src is None and args.tpose_motion:
         ext = Path(args.tpose_motion).suffix.lower()
         if ext == ".npz":
-            args.tpose_src = "smplx"
+            args.src = "smplx"
         elif ext == ".bvh":
-            args.tpose_src = "bvh"
-        else:
-            args.tpose_src = args.src
-    elif args.tpose_src is None:
-        args.tpose_src = args.src
+            args.src = "bvh"
+
+    if args.src is None and args.formats is not None:
+        args.src = args.formats[0]
+
+    if args.src is None:
+        args.src = "bvh"
 
     if args.formats is None:
         args.formats = [args.src]
-
-    if args.tpose_src not in args.formats:
-        args.formats.append(args.tpose_src)
 
     _DEFAULT_SMPLX_BODY_MODEL = GMR_ROOT / "assets" / "body_models"
     smplx_body_model_root: Path | None = None
@@ -329,9 +348,7 @@ def main() -> None:
     elif _DEFAULT_SMPLX_BODY_MODEL.exists():
         smplx_body_model_root = _DEFAULT_SMPLX_BODY_MODEL
 
-    smplx_template_available = (
-        args.src == "smplx" or args.tpose_src == "smplx"
-    ) and smplx_body_model_root is not None
+    smplx_template_available = args.src == "smplx" and smplx_body_model_root is not None
 
     print(f"\n{'=' * 60}")
     print(f"Setup Robot: {args.robot}")
@@ -364,6 +381,7 @@ def main() -> None:
 
     # ── Step 1-2: Match bodies and generate IK config per format ──
     config_paths: list[Path] = []
+    smplx_skeleton: Any = None
     for fmt in args.formats:
         print(f"\n[setup] --- Format: {fmt} ---")
 
@@ -393,6 +411,8 @@ def main() -> None:
                 continue
 
         skeleton = get_skeleton(fmt)
+        if fmt == "smplx":
+            smplx_skeleton = skeleton
         result = match_bodies(
             body_names,
             skeleton,
@@ -466,8 +486,11 @@ def main() -> None:
         print("\n[setup] Dry run complete — no files modified.")
         return
 
-    # ── Step 4: Stage T-pose (requires tpose_motion) ──
-    if args.tpose_motion and not args.skip_stage:
+    # ── Step 4: Stage T-pose ──
+    should_stage = bool(
+        args.tpose_motion or args.tpose_qpos or args.tpose_qpos_file or args.tpose_joint
+    )
+    if should_stage and not args.skip_stage:
         print("\n[setup] Step 4: Staging T-pose...")
         spec_path = Path(args.output_dir) / f"{args.robot}.json"
         stage_cmd = [
@@ -476,7 +499,7 @@ def main() -> None:
             "--robot",
             args.robot,
             "--src",
-            args.tpose_src,
+            args.src,
             "--preset",
             args.tpose_preset,
             "--output_dir",
@@ -484,6 +507,10 @@ def main() -> None:
         ]
         for jt in args.tpose_joint:
             stage_cmd.extend(["--joint", jt])
+        if args.tpose_qpos:
+            stage_cmd.extend(["--qpos", args.tpose_qpos])
+        if args.tpose_qpos_file:
+            stage_cmd.extend(["--qpos_file", str(args.tpose_qpos_file)])
         result = subprocess.run(stage_cmd, capture_output=True, text=True)
         if result.returncode != 0:
             print(result.stdout)
@@ -498,9 +525,15 @@ def main() -> None:
     if should_solve and not args.skip_solve:
         print("\n[setup] Step 5: Solving IK config quaternions...")
 
-        if args.tpose_src == "smplx" or (args.src == "smplx" and smplx_template_available):
+        if args.src == "smplx" and smplx_template_available:
             solve_result = _solve_smplx_offsets(
-                args.robot, spec_path, body_model_root=smplx_body_model_root
+                args.robot,
+                spec_path,
+                body_model_root=smplx_body_model_root,
+                xml_path=xml_path,
+                skeleton=smplx_skeleton,
+                body_names=body_names,
+                root_body=root_body,
             )
         else:
             solve_result = _solve_via_agent(args, spec_path)
@@ -513,11 +546,11 @@ def main() -> None:
     if should_validate:
         params = load_gmr_params(GMR_ROOT)
         ik_dict = getattr(params, "IK_CONFIG_DICT", {})
-        ik_config_src = ik_dict.get(args.tpose_src, {})
+        ik_config_src = ik_dict.get(args.src, {})
         if args.robot not in ik_config_src:
             print(
                 f"\n[setup] WARNING: robot {args.robot!r} not found in "
-                f"IK_CONFIG_DICT[{args.tpose_src!r}] after registration. "
+                f"IK_CONFIG_DICT[{args.src!r}] after registration. "
                 "Skipping validation — the GMR params module may need a "
                 "manual reload or the ik_configs directory may be missing."
             )
@@ -530,7 +563,7 @@ def main() -> None:
                 "--robot",
                 args.robot,
                 "--src",
-                args.tpose_src,
+                args.src,
                 "--bvh_format",
                 args.bvh_format,
                 "--spec",

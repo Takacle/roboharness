@@ -35,9 +35,9 @@ if _ROBOHARNESS_SRC.exists() and str(_ROBOHARNESS_SRC) not in sys.path:
     sys.path.insert(0, str(_ROBOHARNESS_SRC))
 
 CAM_AZIMUTHS = {
-    "inspect_front": 90.0,
-    "inspect_side": 0.0,
-    "inspect_back": 270.0,
+    "inspect_front": 0.0,
+    "inspect_side": 90.0,
+    "inspect_back": 180.0,
 }
 
 CAM_ELEVATION = -20.0
@@ -95,6 +95,8 @@ def load_smplx(npz_file: str) -> tuple[list, float, int]:
         load_smplx_file,
     )
 
+    from roboharness.alignment.smplx_coordinate import smpl_to_mujoco_frame
+
     smplx_body_model_path = GMR_ROOT / "assets" / "body_models"
     smplx_data, body_model, smplx_output, human_height = load_smplx_file(
         npz_file, smplx_body_model_path
@@ -103,7 +105,11 @@ def load_smplx(npz_file: str) -> tuple[list, float, int]:
     frames, aligned_fps = get_smplx_data_offline_fast(
         smplx_data, body_model, smplx_output, tgt_fps=tgt_fps
     )
-    print(f"[smplx] Loaded: {len(frames)} frames @ {aligned_fps} fps  height={human_height:.2f} m")
+    frames = [smpl_to_mujoco_frame(f) for f in frames]
+    print(
+        f"[smplx] Loaded: {len(frames)} frames @ {aligned_fps} fps"
+        f"  height={human_height:.2f} m  (Z-up)"
+    )
     return frames, human_height, aligned_fps
 
 
