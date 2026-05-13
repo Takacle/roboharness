@@ -84,6 +84,7 @@ def load_smplx_template_tpose(
     body_model_path: Path | str | None = None,
     gender: str = "male",
     betas: np.ndarray | None = None,
+    yup: bool = False,
 ) -> tuple[dict[str, tuple[np.ndarray, np.ndarray]], float]:
     """Create a GMR-compatible SMPL-X frame from the body model zero-pose.
 
@@ -99,15 +100,19 @@ def load_smplx_template_tpose(
         ``"male"`` or ``"female"`` or ``"neutral"``.
     betas:
         Optional shape coefficients (length 10). Defaults to zeros.
+    yup:
+        When ``True``, return data in native Y-up SMPL-X coordinates
+        (X=left, Y=up, Z=forward) WITHOUT applying ``smpl_to_mujoco_frame()``.
+        This matches the output of GMR's ``get_smplx_data_offline_fast()``.
+        When ``False`` (default), convert to Z-up MuJoCo coordinates for
+        backward compatibility with existing callers.
 
     Returns
     -------
     frame:
         ``{joint_name: (position_3d, quat_wxyz)}`` where quaternions are
-        scalar-first ``[w, x, y, z]`` and positions are in **Z-up MuJoCo
-        coordinates** (X=forward, Y=left, Z=up).  The Y-up → Z-up conversion
-        is applied internally so callers receive data already in the robot's
-        frame convention.
+        scalar-first ``[w, x, y, z]`` and positions are in Y-up (``yup=True``)
+        or Z-up MuJoCo (``yup=False``) coordinates.
     human_height:
         Deterministic height estimate for scaling.
     """
@@ -172,9 +177,10 @@ def load_smplx_template_tpose(
         quat = rot.as_quat(scalar_first=True)
         frame[joint_name] = (pos, quat)
 
-    from roboharness.alignment.smplx_coordinate import smpl_to_mujoco_frame
+    if not yup:
+        from roboharness.alignment.smplx_coordinate import smpl_to_mujoco_frame
 
-    frame = smpl_to_mujoco_frame(frame)
+        frame = smpl_to_mujoco_frame(frame)
 
     height = 1.66 + 0.1 * float(betas[0])
 

@@ -297,7 +297,7 @@ class TestSolveSmplxOffsetsFromTemplate:
 
         assert "world_rotation" not in solved
 
-    def test_solver_applies_existing_world_rotation_before_offsets(self, tmp_path: Path):
+    def test_solver_ignores_world_rotation_in_offsets(self, tmp_path: Path):
         from scipy.spatial.transform import Rotation as R
 
         config_path = self._make_ik_config(tmp_path)
@@ -316,17 +316,20 @@ class TestSolveSmplxOffsetsFromTemplate:
             body_model_path=_BODY_MODEL_ROOT,
         )
 
+        assert "world_rotation" in solved
+        np.testing.assert_allclose(solved["world_rotation"], wr_quat, atol=1e-10)
+
         q_offset = np.asarray(solved["ik_match_table1"]["base_link"][4], dtype=np.float64)
         from roboharness.alignment.smplx_coordinate import SMPL_TO_MUJOCO_QUAT
 
-        r_human = r_wr * R.from_quat(SMPL_TO_MUJOCO_QUAT, scalar_first=True)
+        r_conv_inv = R.from_quat(SMPL_TO_MUJOCO_QUAT, scalar_first=True).inv()
         r_target = R.from_matrix(
             np.asarray(
                 json.loads(spec_path.read_text())["links"]["base_link"]["R"],
                 dtype=np.float64,
             )
         )
-        expected_offset = (r_human.inv() * r_target).as_quat(scalar_first=True)
+        expected_offset = (r_conv_inv * r_target).as_quat(scalar_first=True)
         assert (
             min(
                 float(np.linalg.norm(q_offset - expected_offset)),
