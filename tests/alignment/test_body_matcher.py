@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import ClassVar
 
 from roboharness.alignment.body_matcher import match_bodies
-from roboharness.alignment.skeleton_maps import SMPLX_SKELETON
+from roboharness.alignment.skeleton_maps import BVH_SKELETON, SMPLX_SKELETON
 
 
 class TestUnitreeH1:
@@ -264,6 +264,59 @@ class TestOverrides:
     def test_root_hint(self):
         r = match_bodies(self.BODIES, SMPLX_SKELETON, root_body_hint="base_link")
         assert r.mapping["root"] == "base_link"
+
+
+class TestEngineAiNaming:
+    BODIES: ClassVar[list[str]] = [
+        "LINK_BASE",
+        "LINK_HIP_PITCH_L",
+        "LINK_HIP_ROLL_L",
+        "LINK_HIP_YAW_L",
+        "LINK_KNEE_PITCH_L",
+        "LINK_ANKLE_PITCH_L",
+        "LINK_ANKLE_ROLL_L",
+        "LINK_FOOT_L",
+        "LINK_HIP_PITCH_R",
+        "LINK_HIP_ROLL_R",
+        "LINK_HIP_YAW_R",
+        "LINK_KNEE_PITCH_R",
+        "LINK_ANKLE_PITCH_R",
+        "LINK_ANKLE_ROLL_R",
+        "LINK_FOOT_R",
+        "LINK_TORSO_YAW",
+        "LINK_SHOULDER_PITCH_L",
+        "LINK_SHOULDER_ROLL_L",
+        "LINK_SHOULDER_YAW_L",
+        "LINK_ELBOW_PITCH_L",
+        "LINK_ELBOW_YAW_L",
+        "LINK_ELBOW_END_L",
+        "LINK_SHOULDER_PITCH_R",
+        "LINK_SHOULDER_ROLL_R",
+        "LINK_SHOULDER_YAW_R",
+        "LINK_ELBOW_PITCH_R",
+        "LINK_ELBOW_YAW_R",
+        "LINK_ELBOW_END_R",
+    ]
+
+    def test_bvh_engineai_pm01_names_match_all_roles(self):
+        r = match_bodies(self.BODIES, BVH_SKELETON)
+        assert r.mapping == {
+            "root": "LINK_BASE",
+            "spine": "LINK_TORSO_YAW",
+            "left_hip": "LINK_HIP_ROLL_L",
+            "right_hip": "LINK_HIP_ROLL_R",
+            "left_knee": "LINK_KNEE_PITCH_L",
+            "right_knee": "LINK_KNEE_PITCH_R",
+            "left_foot": "LINK_ANKLE_ROLL_L",
+            "right_foot": "LINK_ANKLE_ROLL_R",
+            "left_shoulder": "LINK_SHOULDER_ROLL_L",
+            "right_shoulder": "LINK_SHOULDER_ROLL_R",
+            "left_elbow": "LINK_ELBOW_PITCH_L",
+            "right_elbow": "LINK_ELBOW_PITCH_R",
+            "left_wrist": "LINK_ELBOW_END_L",
+            "right_wrist": "LINK_ELBOW_END_R",
+        }
+        assert r.unmatched_roles == []
 
 
 class TestMatchResult:

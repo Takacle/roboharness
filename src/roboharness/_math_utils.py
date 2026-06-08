@@ -9,6 +9,7 @@ rotation matrix converters that previously lived in ``alignment/patch.py``,
 from __future__ import annotations
 
 import math
+from typing import cast
 
 import numpy as np
 
@@ -33,8 +34,9 @@ def normalize_vector(
     """
     n = float(np.linalg.norm(v))
     if n < 1e-10:
-        return v.copy() if fallback is None else fallback.copy()
-    return v / n
+        source = v if fallback is None else fallback
+        return cast("np.ndarray", np.asarray(source, dtype=float).copy())
+    return cast("np.ndarray", np.asarray(v / n, dtype=float))
 
 
 def quat_multiply(q1: list[float], q2: list[float]) -> list[float]:

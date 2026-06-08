@@ -514,6 +514,36 @@ def test_apply_patch_weight_combined_with_quat() -> None:
     assert out["ik_match_table1"]["j"][2] == pytest.approx(10.0)
 
 
+def test_apply_patch_pos_offset_mirror_auto() -> None:
+    cfg = _make_config_with_weights(["j"])
+    out = apply_patch(
+        cfg,
+        {"ik_match_table1": {"j": {"pos_offset": [1, 2, 3]}}},
+        mirror="auto",
+    )
+    assert out["ik_match_table1"]["j"][3] == [1.0, 2.0, 3.0]
+    assert out["ik_match_table2"]["j"][3] == [1.0, 2.0, 3.0]
+
+
+def test_apply_patch_pos_offset_combined_with_quat_and_weight() -> None:
+    cfg = _make_config_with_weights(["j"])
+    out = apply_patch(
+        cfg,
+        {
+            "ik_match_table1": {
+                "j": {
+                    "quat": {"mode": "set", "quat": [0.0, 1.0, 0.0, 0.0]},
+                    "pos_offset": [0.1, 0.2, 0.3],
+                    "pos_weight": 50,
+                }
+            }
+        },
+    )
+    assert _quats_close(out["ik_match_table1"]["j"][4], [0.0, 1.0, 0.0, 0.0])
+    assert out["ik_match_table1"]["j"][3] == [0.1, 0.2, 0.3]
+    assert out["ik_match_table1"]["j"][1] == 50.0
+
+
 def test_apply_patch_weight_mirror_auto() -> None:
     cfg = _make_config_with_weights(["j"], pos_weight=10)
     out = apply_patch(

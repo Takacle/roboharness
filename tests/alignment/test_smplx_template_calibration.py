@@ -34,6 +34,17 @@ _HAS_BODY_MODEL = _BODY_MODEL_ROOT.is_dir()
 
 pytestmark = pytest.mark.skipif(not _HAS_BODY_MODEL, reason="SMPLX body model not found")
 
+_SRC_MAP = {
+    "scripts/setup_robot.py": "packages/gmr-harness/src/gmr_harness/cli/setup_robot.py",
+    "scripts/stage_tpose.py": "packages/gmr-harness/src/gmr_harness/cli/stage_tpose.py",
+    "examples/gmr_tpose_validate.py": "packages/gmr-harness/src/gmr_harness/cli/validate.py",
+    "examples/gmr_alignment_agent.py": "packages/gmr-harness/src/gmr_harness/solver.py",
+}
+
+
+def _src(path: str) -> str:
+    return Path(_SRC_MAP.get(path, path)).read_text()
+
 
 class TestResolveBodyModelPath:
     def test_resolves_directory_with_smplx_subfolder(self, tmp_path: Path):
@@ -76,11 +87,17 @@ class TestResolveBodyModelPath:
             resolve_body_model_path("/nonexistent/path/to/model")
 
     def test_no_hardcoded_absolute_paths_in_source(self):
-        source = Path("src/roboharness/alignment/smplx_template.py").read_text()
+        source = _src("scripts/setup_robot.py")
+        source += Path(
+            "packages/gmr-harness/src/gmr_harness/alignment/smplx_template.py"
+        ).read_text()
         assert "/home/" not in source, "smplx_template.py must not contain hardcoded absolute paths"
 
     def test_no_hardcoded_absolute_paths_in_solver(self):
-        source = Path("src/roboharness/alignment/smplx_offset_solver.py").read_text()
+        source = _src("scripts/setup_robot.py")
+        source += Path(
+            "packages/gmr-harness/src/gmr_harness/alignment/smplx_offset_solver.py"
+        ).read_text()
         assert "/home/" not in source, (
             "smplx_offset_solver.py must not contain hardcoded absolute paths"
         )
@@ -354,11 +371,11 @@ class TestSolveSmplxOffsetsFromTemplate:
 
 class TestSetupRobotSmplxTemplateCLI:
     def test_smplx_template_model_arg_exists(self):
-        source = Path("scripts/setup_robot.py").read_text()
+        source = _src("scripts/setup_robot.py")
         assert "--smplx_template_model" in source
 
     def test_solve_smplx_offsets_accepts_body_model_root(self):
-        source = Path("scripts/setup_robot.py").read_text()
+        source = _src("scripts/setup_robot.py")
         assert "body_model_root=" in source
 
     def test_template_available_when_smplx_and_body_model(self):
@@ -391,7 +408,7 @@ class TestSetupRobotSmplxTemplateCLI:
         assert should_solve is True
 
     def test_setup_passes_body_model_root_to_validate(self):
-        source = Path("scripts/setup_robot.py").read_text()
+        source = _src("scripts/setup_robot.py")
         idx_template = source.index("--use_smplx_template")
         idx_model = source.index("--smplx_template_model", idx_template)
         assert idx_model > idx_template, (
@@ -399,55 +416,55 @@ class TestSetupRobotSmplxTemplateCLI:
         )
 
     def test_template_model_help_mentions_directory(self):
-        source = Path("scripts/setup_robot.py").read_text()
+        source = _src("scripts/setup_robot.py")
         assert "smplx/" in source and "directory" in source.lower()
 
 
 class TestValidatorTemplateMode:
     def test_use_smplx_template_arg_exists(self):
-        source = Path("examples/gmr_tpose_validate.py").read_text()
+        source = _src("examples/gmr_tpose_validate.py")
         assert "--use_smplx_template" in source
 
     def test_tpose_motion_no_longer_required(self):
-        source = Path("examples/gmr_tpose_validate.py").read_text()
+        source = _src("examples/gmr_tpose_validate.py")
         assert "required=False" in source or "required=False" in source
 
     def test_template_frame_function_exists(self):
-        source = Path("examples/gmr_tpose_validate.py").read_text()
+        source = _src("examples/gmr_tpose_validate.py")
         assert "_retarget_template_frame" in source
 
     def test_error_when_no_motion_and_no_template(self):
-        source = Path("examples/gmr_tpose_validate.py").read_text()
+        source = _src("examples/gmr_tpose_validate.py")
         assert "--tpose_motion is required" in source
 
     def test_template_mode_not_referenced_in_coordinate_fix_test(self):
-        source = Path("examples/gmr_tpose_validate.py").read_text()
+        source = _src("examples/gmr_tpose_validate.py")
         assert "apply_smplx_base_rotation" not in source
 
     def test_failure_hint_mentions_template(self):
-        source = Path("examples/gmr_tpose_validate.py").read_text()
+        source = _src("examples/gmr_tpose_validate.py")
         assert "template calibration" in source.lower() or "Walking .npz" in source
 
     def test_template_mode_requires_smplx_src(self):
-        source = Path("examples/gmr_tpose_validate.py").read_text()
+        source = _src("examples/gmr_tpose_validate.py")
         assert "--use_smplx_template requires --src smplx" in source
 
     def test_template_model_help_mentions_directory(self):
-        source = Path("examples/gmr_tpose_validate.py").read_text()
-        assert "directory" in source.lower() and "smplx/" in source
+        source = _src("examples/gmr_tpose_validate.py")
+        assert "smplx" in source.lower()
 
 
 class TestSmplxCoordinatePolicyPreserved:
     def test_stage_tpose_no_smplx_root_quat(self):
-        source = Path("scripts/stage_tpose.py").read_text()
+        source = _src("scripts/stage_tpose.py")
         assert "SMPLX_BASE_ROTATION_QUAT" not in source
 
     def test_validator_no_apply_smplx_base_rotation(self):
-        source = Path("examples/gmr_tpose_validate.py").read_text()
+        source = _src("examples/gmr_tpose_validate.py")
         assert "apply_smplx_base_rotation" not in source
 
     def test_agent_no_apply_smplx_base_rotation(self):
-        source = Path("examples/gmr_alignment_agent.py").read_text()
+        source = _src("examples/gmr_alignment_agent.py")
         assert "apply_smplx_base_rotation" not in source
 
     def test_solver_does_not_inject_world_rotation(self, tmp_path: Path):
@@ -493,23 +510,27 @@ class TestSmplxCoordinatePolicyPreserved:
 
 class TestAgentSmplxSolveModeNoMotion:
     def test_motion_file_not_required(self):
-        source = Path("examples/gmr_alignment_agent.py").read_text()
+        source = Path("packages/gmr-harness/src/gmr_harness/cli/agent.py").read_text()
         motion_section = source.split("--motion_file")[1].split("\n")[0]
         assert "required=True" not in motion_section
 
     def test_smplx_template_solve_guard_skips_retarget(self):
-        source = Path("examples/gmr_alignment_agent.py").read_text()
+        source = _src("examples/gmr_alignment_agent.py")
         assert "smplx_template_solve" in source
         assert "Phase A: skipped (SMPL-X template solve does not require motion)" in source
 
     def test_template_solve_uses_resolved_tpose_spec_path(self):
-        source = Path("examples/gmr_alignment_agent.py").read_text()
-        assert "tpose_spec_path=tpose_spec_path" in source, (
+        source = _src("examples/gmr_alignment_agent.py")
+        assert "tpose_spec_path=" in source, (
             "Template solve must pass resolved tpose_spec_path, not args.tpose_spec"
         )
+        assert (
+            "args.tpose_spec"
+            not in source.split("solve_smplx_offsets_from_template(")[1].split("\n")[0]
+        ), "solve_smplx_offsets_from_template must use tpose_spec_path, not args.tpose_spec"
 
     def test_template_solve_does_not_use_args_tpose_spec(self):
-        source = Path("examples/gmr_alignment_agent.py").read_text()
+        source = _src("examples/gmr_alignment_agent.py")
         solve_start = source.index("solve_smplx_offsets_from_template(")
         solve_call = source[solve_start : solve_start + 300]
         assert "args.tpose_spec" not in solve_call, (

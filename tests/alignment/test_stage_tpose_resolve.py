@@ -8,7 +8,7 @@ import pytest
 
 
 def test_resolve_robot_falls_back_to_generated_robot_config(tmp_path, monkeypatch):
-    import scripts.stage_tpose as stage_tpose
+    from gmr_harness.cli import stage_tpose as stage_tpose
 
     gmr_root = tmp_path / "GMR"
     asset_dir = gmr_root / "assets" / "engineai_pm01"
@@ -38,7 +38,7 @@ def test_resolve_robot_falls_back_to_generated_robot_config(tmp_path, monkeypatc
         VIEWER_CAM_DISTANCE_DICT={"engineai_pm01": 3.0},
     )
 
-    monkeypatch.setattr(stage_tpose, "GMR_ROOT", gmr_root)
+    monkeypatch.setattr(stage_tpose, "_get_gmr_root", lambda: gmr_root)
     monkeypatch.setattr(stage_tpose, "load_gmr_params", lambda _root: params)
 
     resolved_xml, link_names, cam_distance = stage_tpose._resolve_robot("engineai_pm01", "bvh")
@@ -49,7 +49,7 @@ def test_resolve_robot_falls_back_to_generated_robot_config(tmp_path, monkeypatc
 
 
 def test_qpos_input_cannot_be_same_as_output_spec(tmp_path):
-    import scripts.stage_tpose as stage_tpose
+    from gmr_harness.cli import stage_tpose as stage_tpose
 
     spec_path = tmp_path / "specs" / "tpose" / "engineai_pm01.json"
     spec_path.parent.mkdir(parents=True)
@@ -60,7 +60,7 @@ def test_qpos_input_cannot_be_same_as_output_spec(tmp_path):
 
 
 def test_qpos_input_can_be_separate_from_output_spec(tmp_path):
-    import scripts.stage_tpose as stage_tpose
+    from gmr_harness.cli import stage_tpose as stage_tpose
 
     qpos_source = tmp_path / "inputs" / "engineai_pm01_qpos.json"
     spec_path = tmp_path / "specs" / "tpose" / "engineai_pm01.json"

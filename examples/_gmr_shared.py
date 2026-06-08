@@ -1,5 +1,9 @@
 """Shared GMR integration utilities for example scripts.
 
+.. deprecated::
+    Use ``gmr_harness.gmr_integration`` instead. This module will be removed
+    in a future release.
+
 Internal helper for ``examples/gmr_*.py`` scripts. Extracts common logic
 so that retarget loaders, replay backends, and path setup are defined once.
 
@@ -8,14 +12,21 @@ Requires GMR as a sibling directory and ``mujoco`` (lazy imports).
 
 from __future__ import annotations
 
-import re
 import sys
+import warnings
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
-from roboharness.alignment.skeleton_maps import (
+warnings.warn(
+    "examples/_gmr_shared.py is deprecated; use gmr_harness.gmr_integration instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
+from roboharness.alignment.skeleton_maps import (  # noqa: E402
     BVH_SKELETON,
     SMPLX_SKELETON,
 )
@@ -60,9 +71,17 @@ _SKELETON_EDGES = SMPLX_SKELETON.edges + BVH_SKELETON.edges
 
 
 def find_root_body(xml_path: Path) -> str:
-    content = xml_path.read_text()
-    matches = re.findall(r'<body\s+name="([^"]+)"', content)
-    return matches[0] if matches else "pelvis"
+    from roboharness.alignment.orientation_aligner import _resolve_includes
+
+    root = ET.parse(str(xml_path)).getroot()
+    _resolve_includes(root, xml_path.parent)
+    worldbody = root.find("worldbody")
+    root_body = worldbody.find("body") if worldbody is not None else None
+    if root_body is not None:
+        name = root_body.attrib.get("name")
+        if name:
+            return name
+    return "pelvis"
 
 
 def check_smplx_config_before_retarget(robot: str, src: str) -> None:

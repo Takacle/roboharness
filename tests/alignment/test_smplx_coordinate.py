@@ -304,13 +304,17 @@ class TestSolverUsesPipeline:
         )
 
     def test_solver_imports_scale_module(self):
-        source = Path("src/roboharness/alignment/smplx_offset_solver.py").read_text()
+        source = Path(
+            "packages/gmr-harness/src/gmr_harness/alignment/smplx_offset_solver.py"
+        ).read_text()
         assert "apply_human_scale" in source, (
             "smplx_offset_solver.py must use apply_human_scale from pipeline"
         )
 
     def test_solver_does_not_import_legacy_constant(self):
-        source = Path("src/roboharness/alignment/smplx_offset_solver.py").read_text()
+        source = Path(
+            "packages/gmr-harness/src/gmr_harness/alignment/smplx_offset_solver.py"
+        ).read_text()
         assert "SMPLX_BASE_ROTATION_QUAT" not in source, (
             "smplx_offset_solver.py must not import SMPLX_BASE_ROTATION_QUAT"
         )

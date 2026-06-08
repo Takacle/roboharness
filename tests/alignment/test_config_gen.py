@@ -73,6 +73,12 @@ class TestGenerateIkConfig:
         assert "human_scale_table" in config
         assert len(config["human_scale_table"]) > 0
 
+    def test_scale_table_always_includes_root(self):
+        match = MatchResult(mapping={"spine": "LINK_TORSO_YAW"})
+        config = generate_ik_config(match, BVH_SKELETON)
+        assert config["human_root_name"] == "Hips"
+        assert config["human_scale_table"]["Hips"] == 0.9
+
     def test_identity_quaternions(self, h1_match):
         config = generate_ik_config(h1_match, SMPLX_SKELETON)
         for table_key in ("ik_match_table1", "ik_match_table2"):

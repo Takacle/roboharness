@@ -261,12 +261,13 @@ def test_compute_direct_patch_identity_offset(xml_file: Path) -> None:
         "ik_match_table1": {"arm": ["arm_bone", 1.0, 1.0, [0, 0, 0], [1, 0, 0, 0]]},
         "ik_match_table2": {"arm": ["arm_bone", 1.0, 1.0, [0, 0, 0], [1, 0, 0, 0]]},
     }
-    tpose_spec = {"links": {"arm": {"R": R_arm.tolist()}}}
+    tpose_spec = {"links": {"arm": {"R": R_arm.tolist(), "pos": [0.0, 0.0, 0.0]}}}
 
     patch = compute_direct_patch(human_data, config, tpose_spec)
     assert "ik_match_table1" in patch
     assert "arm" in patch["ik_match_table1"]
     assert patch["ik_match_table1"]["arm"]["mode"] == "set"
+    assert patch["ik_match_table1"]["arm"]["pos_offset"] == [0.0, 0.0, 0.0]
 
 
 def test_compute_direct_patch_preserves_joints() -> None:
@@ -284,7 +285,7 @@ def test_compute_direct_patch_preserves_joints() -> None:
         },
         "ik_match_table2": {"j1": ["bone_a", 1.0, 1.0, [0, 0, 0], [1, 0, 0, 0]]},
     }
-    tpose_spec = {"links": {"j1": {"R": R_expected.tolist()}}}
+    tpose_spec = {"links": {"j1": {"R": R_expected.tolist(), "pos": [0.0, 0.0, 0.0]}}}
 
     patch = compute_direct_patch(human_data, config, tpose_spec, preserve={"j2"})
 
@@ -298,3 +299,28 @@ def test_compute_direct_patch_preserves_joints() -> None:
         expected_offset.as_quat(scalar_first=True),
         atol=1e-6,
     )
+
+
+def test_compute_direct_patch_position_offset_in_target_frame() -> None:
+    from scipy.spatial.transform import Rotation
+
+    R_expected = Rotation.from_euler("z", 90, degrees=True)
+    q_human = Rotation.identity().as_quat(scalar_first=True).tolist()
+    human_data = {"bone": ([1.0, 2.0, 3.0], q_human)}
+    config = {
+        "ik_match_table1": {"link": ["bone", 1.0, 1.0, [0, 0, 0], [1, 0, 0, 0]]},
+        "ik_match_table2": {"link": ["bone", 1.0, 1.0, [0, 0, 0], [1, 0, 0, 0]]},
+    }
+    tpose_spec = {
+        "links": {
+            "link": {
+                "R": R_expected.as_matrix().tolist(),
+                "pos": [1.0, 3.0, 3.0],
+            }
+        }
+    }
+
+    patch = compute_direct_patch(human_data, config, tpose_spec)
+    pos_offset = patch["ik_match_table1"]["link"]["pos_offset"]
+
+    np.testing.assert_allclose(pos_offset, [1.0, 0.0, 0.0], atol=1e-6)

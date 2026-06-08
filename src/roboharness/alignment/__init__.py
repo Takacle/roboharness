@@ -1,16 +1,25 @@
-"""Numeric alignment metrics for retargeted robot motion.
+"""Compatibility shim — re-exports from ``gmr_harness.alignment``.
 
-Public API for comparing a robot's current pose against an authored T-pose
-contract. See ``docs/gmr-alignment-sop.md`` for the geometric definition of
-"aligned", the workflow for authoring a spec, and common quaternion pitfalls.
+.. deprecated::
+    Use ``gmr_harness.alignment`` directly. This module will be removed
+    in a future release.
 
-New-robot setup API (skeleton maps → body matching → config generation):
-    ``skeleton_maps``, ``body_matcher``, ``config_gen``, ``gmr_register``.
+All sub-modules (``body_matcher``, ``config_gen``, etc.) are re-export
+shims from ``gmr_harness.alignment.*``. New code should import directly
+from ``gmr_harness.alignment``.
 """
 
 from __future__ import annotations
 
-from roboharness.alignment.metrics import (
+import warnings
+
+warnings.warn(
+    "roboharness.alignment is deprecated; use gmr_harness.alignment instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
+from roboharness.alignment.metrics import (  # noqa: E402
     TposeSpec,
     compute_deviations,
     compute_direct_patch,
@@ -21,8 +30,8 @@ from roboharness.alignment.metrics import (
     worst_k,
     worst_k_position,
 )
-from roboharness.alignment.optimize import optimize_scales
-from roboharness.alignment.patch import apply_patch
+from roboharness.alignment.optimize import optimize_scales  # noqa: E402
+from roboharness.alignment.patch import apply_patch  # noqa: E402
 
 __all__ = [
     "TposeSpec",

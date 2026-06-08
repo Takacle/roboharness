@@ -39,6 +39,25 @@ class TestParseWorldRotationArg:
         positive = parse_world_rotation_arg("90,0,0,1")
         assert abs(result[3] - positive[3]) > 0.01
 
+
+class TestFindRootBody:
+    def test_include_only_xml_uses_included_worldbody_root(self, tmp_path):
+        root_xml = tmp_path / "robot.xml"
+        include_dir = tmp_path / "xml"
+        include_dir.mkdir()
+        root_xml.write_text(
+            '<mujoco><include file="xml/body.xml"/></mujoco>',
+            encoding="utf-8",
+        )
+        (include_dir / "body.xml").write_text(
+            '<mujoco><worldbody><body name="LINK_BASE"/></worldbody></mujoco>',
+            encoding="utf-8",
+        )
+
+        from examples._gmr_shared import find_root_body
+
+        assert find_root_body(root_xml) == "LINK_BASE"
+
     def test_wrong_field_count_raises(self):
         with pytest.raises(ValueError, match="4 comma-separated"):
             parse_world_rotation_arg("90,0,0")
@@ -98,12 +117,14 @@ class TestDryRunOrchestration:
         gmr_root, xml_file = self._make_gmr_tree(tmp_path)
 
         with (
-            patch("scripts.setup_robot.GMR_ROOT", gmr_root),
-            patch("scripts.setup_robot.write_ik_config") as mock_write,
-            patch("scripts.setup_robot.clone_ik_config"),
-            patch("scripts.setup_robot.extract_xml_body_names") as mock_extract,
-            patch("scripts.setup_robot.register_in_params") as mock_reg,
-            patch("scripts.setup_robot.update_script_choices"),
+            patch("gmr_harness.cli.setup_robot._get_gmr_root", return_value=gmr_root),
+            patch("gmr_harness.alignment.config_gen.write_ik_config") as mock_write,
+            patch("gmr_harness.alignment.config_gen.clone_ik_config"),
+            patch(
+                "gmr_harness.alignment.orientation_aligner.extract_xml_body_names"
+            ) as mock_extract,
+            patch("gmr_harness.alignment.gmr_register.register_in_params") as mock_reg,
+            patch("gmr_harness.alignment.gmr_register.update_script_choices"),
         ):
             mock_extract.return_value = [
                 "pelvis",
@@ -119,7 +140,7 @@ class TestDryRunOrchestration:
             ]
             mock_reg.return_value = []
 
-            import scripts.setup_robot as mod
+            from gmr_harness.cli import setup_robot as mod
 
             test_args = [
                 "setup_robot.py",
@@ -150,13 +171,15 @@ class TestDryRunOrchestration:
         )
 
         with (
-            patch("scripts.setup_robot.GMR_ROOT", gmr_root),
-            patch("scripts.setup_robot.clone_ik_config") as mock_clone,
-            patch("scripts.setup_robot.write_ik_config"),
-            patch("scripts.setup_robot.extract_xml_body_names") as mock_extract,
-            patch("scripts.setup_robot._find_clone_source", return_value=src_config),
-            patch("scripts.setup_robot.register_in_params", return_value=[]),
-            patch("scripts.setup_robot.update_script_choices", return_value=[]),
+            patch("gmr_harness.cli.setup_robot._get_gmr_root", return_value=gmr_root),
+            patch("gmr_harness.alignment.config_gen.clone_ik_config") as mock_clone,
+            patch("gmr_harness.alignment.config_gen.write_ik_config"),
+            patch(
+                "gmr_harness.alignment.orientation_aligner.extract_xml_body_names"
+            ) as mock_extract,
+            patch("gmr_harness.cli.setup_robot._find_clone_source", return_value=src_config),
+            patch("gmr_harness.alignment.gmr_register.register_in_params", return_value=[]),
+            patch("gmr_harness.alignment.gmr_register.update_script_choices", return_value=[]),
         ):
             mock_extract.return_value = [
                 "pelvis",
@@ -171,7 +194,7 @@ class TestDryRunOrchestration:
                 "right_elbow",
             ]
 
-            import scripts.setup_robot as mod
+            from gmr_harness.cli import setup_robot as mod
 
             test_args = [
                 "setup_robot.py",
@@ -195,11 +218,13 @@ class TestDryRunOrchestration:
 
         output = StringIO()
         with (
-            patch("scripts.setup_robot.GMR_ROOT", gmr_root),
-            patch("scripts.setup_robot.write_ik_config"),
-            patch("scripts.setup_robot.extract_xml_body_names") as mock_extract,
-            patch("scripts.setup_robot.register_in_params", return_value=[]),
-            patch("scripts.setup_robot.update_script_choices", return_value=[]),
+            patch("gmr_harness.cli.setup_robot._get_gmr_root", return_value=gmr_root),
+            patch("gmr_harness.alignment.config_gen.write_ik_config"),
+            patch(
+                "gmr_harness.alignment.orientation_aligner.extract_xml_body_names"
+            ) as mock_extract,
+            patch("gmr_harness.alignment.gmr_register.register_in_params", return_value=[]),
+            patch("gmr_harness.alignment.gmr_register.update_script_choices", return_value=[]),
             patch("sys.stdout", output),
         ):
             mock_extract.return_value = [
@@ -215,7 +240,7 @@ class TestDryRunOrchestration:
                 "right_elbow",
             ]
 
-            import scripts.setup_robot as mod
+            from gmr_harness.cli import setup_robot as mod
 
             test_args = [
                 "setup_robot.py",
@@ -247,8 +272,11 @@ class TestXmlLocationValidation:
             robot="my_robot",
         )
 
-        with patch("scripts.setup_robot.GMR_ROOT", gmr_root), pytest.raises(SystemExit):
-            import scripts.setup_robot as mod
+        with (
+            patch("gmr_harness.cli.setup_robot._get_gmr_root", return_value=gmr_root),
+            pytest.raises(SystemExit),
+        ):
+            from gmr_harness.cli import setup_robot as mod
 
             mod._resolve_xml(args)
 
@@ -264,8 +292,8 @@ class TestXmlLocationValidation:
             robot="my_robot",
         )
 
-        with patch("scripts.setup_robot.GMR_ROOT", gmr_root):
-            import scripts.setup_robot as mod
+        with patch("gmr_harness.cli.setup_robot._get_gmr_root", return_value=gmr_root):
+            from gmr_harness.cli import setup_robot as mod
 
             result = mod._resolve_xml(args)
             assert result.name == "model.xml"
@@ -283,8 +311,11 @@ class TestXmlLocationValidation:
             robot="my_robot",
         )
 
-        with patch("scripts.setup_robot.GMR_ROOT", gmr_root), pytest.raises(SystemExit):
-            import scripts.setup_robot as mod
+        with (
+            patch("gmr_harness.cli.setup_robot._get_gmr_root", return_value=gmr_root),
+            pytest.raises(SystemExit),
+        ):
+            from gmr_harness.cli import setup_robot as mod
 
             mod._resolve_xml(args)
 
@@ -357,7 +388,7 @@ class TestSmplxValidationNotSkipped:
 
 
 class TestValidationCommandConstructed:
-    """Verify that Step 6 actually constructs the gmr_tpose_validate.py command."""
+    """Verify that Step 6 actually constructs the gmr_harness validate command."""
 
     def _make_gmr_tree(self, tmp_path):
         gmr_root = tmp_path / "GMR"
@@ -391,15 +422,18 @@ class TestValidationCommandConstructed:
         mock_run.return_value = MagicMock(returncode=0, stdout="PASSED", stderr="")
 
         with (
-            patch("scripts.setup_robot.GMR_ROOT", gmr_root),
-            patch("scripts.setup_robot.extract_xml_body_names", return_value=["pelvis", "torso"]),
-            patch("scripts.setup_robot.register_in_params", return_value=[]),
-            patch("scripts.setup_robot.update_script_choices", return_value=[]),
-            patch("scripts.setup_robot._solve_smplx_offsets", return_value=True),
-            patch("scripts.setup_robot.subprocess.run", mock_run),
+            patch("gmr_harness.cli.setup_robot._get_gmr_root", return_value=gmr_root),
+            patch(
+                "gmr_harness.alignment.orientation_aligner.extract_xml_body_names",
+                return_value=["pelvis", "torso"],
+            ),
+            patch("gmr_harness.alignment.gmr_register.register_in_params", return_value=[]),
+            patch("gmr_harness.alignment.gmr_register.update_script_choices", return_value=[]),
+            patch("gmr_harness.cli.setup_robot._solve_smplx_offsets", return_value=True),
+            patch("gmr_harness.cli.setup_robot.subprocess.run", mock_run),
             patch("sys.stdout", new_callable=StringIO),
         ):
-            import scripts.setup_robot as mod
+            from gmr_harness.cli import setup_robot as mod
 
             test_args = [
                 "setup_robot.py",
@@ -414,10 +448,12 @@ class TestValidationCommandConstructed:
                 mod.main()
 
         validate_calls = [
-            c for c in mock_run.call_args_list if any("gmr_tpose_validate" in str(a) for a in c[0])
+            c
+            for c in mock_run.call_args_list
+            if any("gmr_harness.cli.validate" in str(a) for a in c[0])
         ]
         assert len(validate_calls) >= 1, (
-            f"Expected gmr_tpose_validate.py to be invoked, "
+            f"Expected gmr_harness.cli.validate to be invoked, "
             f"but subprocess.run calls were: {mock_run.call_args_list}"
         )
 
@@ -428,15 +464,18 @@ class TestValidationCommandConstructed:
         mock_run.return_value = MagicMock(returncode=0, stdout="PASSED", stderr="")
 
         with (
-            patch("scripts.setup_robot.GMR_ROOT", gmr_root),
-            patch("scripts.setup_robot.extract_xml_body_names", return_value=["pelvis", "torso"]),
-            patch("scripts.setup_robot.register_in_params", return_value=[]),
-            patch("scripts.setup_robot.update_script_choices", return_value=[]),
-            patch("scripts.setup_robot._solve_smplx_offsets", return_value=True),
-            patch("scripts.setup_robot.subprocess.run", mock_run),
+            patch("gmr_harness.cli.setup_robot._get_gmr_root", return_value=gmr_root),
+            patch(
+                "gmr_harness.alignment.orientation_aligner.extract_xml_body_names",
+                return_value=["pelvis", "torso"],
+            ),
+            patch("gmr_harness.alignment.gmr_register.register_in_params", return_value=[]),
+            patch("gmr_harness.alignment.gmr_register.update_script_choices", return_value=[]),
+            patch("gmr_harness.cli.setup_robot._solve_smplx_offsets", return_value=True),
+            patch("gmr_harness.cli.setup_robot.subprocess.run", mock_run),
             patch("sys.stdout", new_callable=StringIO),
         ):
-            import scripts.setup_robot as mod
+            from gmr_harness.cli import setup_robot as mod
 
             test_args = [
                 "setup_robot.py",
@@ -451,7 +490,9 @@ class TestValidationCommandConstructed:
                 mod.main()
 
         validate_calls = [
-            c for c in mock_run.call_args_list if any("gmr_tpose_validate" in str(a) for a in c[0])
+            c
+            for c in mock_run.call_args_list
+            if any("gmr_harness.cli.validate" in str(a) for a in c[0])
         ]
         cmd = validate_calls[0][0][0]
         assert "--robot" in cmd
@@ -466,15 +507,18 @@ class TestValidationCommandConstructed:
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
 
         with (
-            patch("scripts.setup_robot.GMR_ROOT", gmr_root),
-            patch("scripts.setup_robot.extract_xml_body_names", return_value=["pelvis", "torso"]),
-            patch("scripts.setup_robot.register_in_params", return_value=[]),
-            patch("scripts.setup_robot.update_script_choices", return_value=[]),
-            patch("scripts.setup_robot._solve_smplx_offsets", return_value=True),
-            patch("scripts.setup_robot.subprocess.run", mock_run),
+            patch("gmr_harness.cli.setup_robot._get_gmr_root", return_value=gmr_root),
+            patch(
+                "gmr_harness.alignment.orientation_aligner.extract_xml_body_names",
+                return_value=["pelvis", "torso"],
+            ),
+            patch("gmr_harness.alignment.gmr_register.register_in_params", return_value=[]),
+            patch("gmr_harness.alignment.gmr_register.update_script_choices", return_value=[]),
+            patch("gmr_harness.cli.setup_robot._solve_smplx_offsets", return_value=True),
+            patch("gmr_harness.cli.setup_robot.subprocess.run", mock_run),
             patch("sys.stdout", new_callable=StringIO),
         ):
-            import scripts.setup_robot as mod
+            from gmr_harness.cli import setup_robot as mod
 
             test_args = [
                 "setup_robot.py",
@@ -490,7 +534,9 @@ class TestValidationCommandConstructed:
                 mod.main()
 
         validate_calls = [
-            c for c in mock_run.call_args_list if any("gmr_tpose_validate" in str(a) for a in c[0])
+            c
+            for c in mock_run.call_args_list
+            if any("gmr_harness.cli.validate" in str(a) for a in c[0])
         ]
         assert len(validate_calls) == 0
 
@@ -530,15 +576,18 @@ class TestStageCommandConstructed:
         mock_run.return_value = MagicMock(returncode=0, stdout="line1\nline2\nline3", stderr="")
 
         with (
-            patch("scripts.setup_robot.GMR_ROOT", gmr_root),
-            patch("scripts.setup_robot.extract_xml_body_names", return_value=["pelvis", "torso"]),
-            patch("scripts.setup_robot.register_in_params", return_value=[]),
-            patch("scripts.setup_robot.update_script_choices", return_value=[]),
-            patch("scripts.setup_robot._solve_smplx_offsets", return_value=True),
-            patch("scripts.setup_robot.subprocess.run", mock_run),
+            patch("gmr_harness.cli.setup_robot._get_gmr_root", return_value=gmr_root),
+            patch(
+                "gmr_harness.alignment.orientation_aligner.extract_xml_body_names",
+                return_value=["pelvis", "torso"],
+            ),
+            patch("gmr_harness.alignment.gmr_register.register_in_params", return_value=[]),
+            patch("gmr_harness.alignment.gmr_register.update_script_choices", return_value=[]),
+            patch("gmr_harness.cli.setup_robot._solve_smplx_offsets", return_value=True),
+            patch("gmr_harness.cli.setup_robot.subprocess.run", mock_run),
             patch("sys.stdout", new_callable=StringIO),
         ):
-            import scripts.setup_robot as mod
+            from gmr_harness.cli import setup_robot as mod
 
             test_args = [
                 "setup_robot.py",
@@ -569,15 +618,18 @@ class TestStageCommandConstructed:
 
         qpos = "0 0 0.8 1 0 0 0"
         with (
-            patch("scripts.setup_robot.GMR_ROOT", gmr_root),
-            patch("scripts.setup_robot.extract_xml_body_names", return_value=["pelvis", "torso"]),
-            patch("scripts.setup_robot.register_in_params", return_value=[]),
-            patch("scripts.setup_robot.update_script_choices", return_value=[]),
-            patch("scripts.setup_robot._solve_smplx_offsets", return_value=True),
-            patch("scripts.setup_robot.subprocess.run", mock_run),
+            patch("gmr_harness.cli.setup_robot._get_gmr_root", return_value=gmr_root),
+            patch(
+                "gmr_harness.alignment.orientation_aligner.extract_xml_body_names",
+                return_value=["pelvis", "torso"],
+            ),
+            patch("gmr_harness.alignment.gmr_register.register_in_params", return_value=[]),
+            patch("gmr_harness.alignment.gmr_register.update_script_choices", return_value=[]),
+            patch("gmr_harness.cli.setup_robot._solve_smplx_offsets", return_value=True),
+            patch("gmr_harness.cli.setup_robot.subprocess.run", mock_run),
             patch("sys.stdout", new_callable=StringIO),
         ):
-            import scripts.setup_robot as mod
+            from gmr_harness.cli import setup_robot as mod
 
             test_args = [
                 "setup_robot.py",
@@ -612,15 +664,18 @@ class TestStageCommandConstructed:
         mock_run.return_value = MagicMock(returncode=0, stdout="line1\nline2\nline3", stderr="")
 
         with (
-            patch("scripts.setup_robot.GMR_ROOT", gmr_root),
-            patch("scripts.setup_robot.extract_xml_body_names", return_value=["pelvis", "torso"]),
-            patch("scripts.setup_robot.register_in_params", return_value=[]),
-            patch("scripts.setup_robot.update_script_choices", return_value=[]),
-            patch("scripts.setup_robot._solve_smplx_offsets", return_value=True),
-            patch("scripts.setup_robot.subprocess.run", mock_run),
+            patch("gmr_harness.cli.setup_robot._get_gmr_root", return_value=gmr_root),
+            patch(
+                "gmr_harness.alignment.orientation_aligner.extract_xml_body_names",
+                return_value=["pelvis", "torso"],
+            ),
+            patch("gmr_harness.alignment.gmr_register.register_in_params", return_value=[]),
+            patch("gmr_harness.alignment.gmr_register.update_script_choices", return_value=[]),
+            patch("gmr_harness.cli.setup_robot._solve_smplx_offsets", return_value=True),
+            patch("gmr_harness.cli.setup_robot.subprocess.run", mock_run),
             patch("sys.stdout", new_callable=StringIO),
         ):
-            import scripts.setup_robot as mod
+            from gmr_harness.cli import setup_robot as mod
 
             test_args = [
                 "setup_robot.py",
@@ -655,15 +710,18 @@ class TestStageCommandConstructed:
         left_shoulder = "LINK_SHOULDER_ROLL_L=1.57"
         right_shoulder = "LINK_SHOULDER_ROLL_R=-1.57"
         with (
-            patch("scripts.setup_robot.GMR_ROOT", gmr_root),
-            patch("scripts.setup_robot.extract_xml_body_names", return_value=["pelvis", "torso"]),
-            patch("scripts.setup_robot.register_in_params", return_value=[]),
-            patch("scripts.setup_robot.update_script_choices", return_value=[]),
-            patch("scripts.setup_robot._solve_smplx_offsets", return_value=True),
-            patch("scripts.setup_robot.subprocess.run", mock_run),
+            patch("gmr_harness.cli.setup_robot._get_gmr_root", return_value=gmr_root),
+            patch(
+                "gmr_harness.alignment.orientation_aligner.extract_xml_body_names",
+                return_value=["pelvis", "torso"],
+            ),
+            patch("gmr_harness.alignment.gmr_register.register_in_params", return_value=[]),
+            patch("gmr_harness.alignment.gmr_register.update_script_choices", return_value=[]),
+            patch("gmr_harness.cli.setup_robot._solve_smplx_offsets", return_value=True),
+            patch("gmr_harness.cli.setup_robot.subprocess.run", mock_run),
             patch("sys.stdout", new_callable=StringIO),
         ):
-            import scripts.setup_robot as mod
+            from gmr_harness.cli import setup_robot as mod
 
             test_args = [
                 "setup_robot.py",
@@ -735,10 +793,12 @@ class TestConfigWritesToGmrRoot:
         gmr_root, xml_file, ik_dir = self._make_gmr_tree(tmp_path)
 
         with (
-            patch("scripts.setup_robot.GMR_ROOT", gmr_root),
-            patch("scripts.setup_robot.extract_xml_body_names") as mock_extract,
-            patch("scripts.setup_robot.register_in_params", return_value=[]),
-            patch("scripts.setup_robot.update_script_choices", return_value=[]),
+            patch("gmr_harness.cli.setup_robot._get_gmr_root", return_value=gmr_root),
+            patch(
+                "gmr_harness.alignment.orientation_aligner.extract_xml_body_names"
+            ) as mock_extract,
+            patch("gmr_harness.alignment.gmr_register.register_in_params", return_value=[]),
+            patch("gmr_harness.alignment.gmr_register.update_script_choices", return_value=[]),
             patch("sys.stdout", new_callable=StringIO),
         ):
             mock_extract.return_value = [
@@ -754,7 +814,7 @@ class TestConfigWritesToGmrRoot:
                 "right_elbow",
             ]
 
-            import scripts.setup_robot as mod
+            from gmr_harness.cli import setup_robot as mod
 
             test_args = [
                 "setup_robot.py",
@@ -788,11 +848,13 @@ class TestConfigWritesToGmrRoot:
         )
 
         with (
-            patch("scripts.setup_robot.GMR_ROOT", gmr_root),
-            patch("scripts.setup_robot.extract_xml_body_names") as mock_extract,
-            patch("scripts.setup_robot._find_clone_source", return_value=src_config),
-            patch("scripts.setup_robot.register_in_params", return_value=[]),
-            patch("scripts.setup_robot.update_script_choices", return_value=[]),
+            patch("gmr_harness.cli.setup_robot._get_gmr_root", return_value=gmr_root),
+            patch(
+                "gmr_harness.alignment.orientation_aligner.extract_xml_body_names"
+            ) as mock_extract,
+            patch("gmr_harness.cli.setup_robot._find_clone_source", return_value=src_config),
+            patch("gmr_harness.alignment.gmr_register.register_in_params", return_value=[]),
+            patch("gmr_harness.alignment.gmr_register.update_script_choices", return_value=[]),
             patch("sys.stdout", new_callable=StringIO),
         ):
             mock_extract.return_value = [
@@ -808,7 +870,7 @@ class TestConfigWritesToGmrRoot:
                 "right_elbow",
             ]
 
-            import scripts.setup_robot as mod
+            from gmr_harness.cli import setup_robot as mod
 
             test_args = [
                 "setup_robot.py",

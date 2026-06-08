@@ -18,9 +18,16 @@ import numpy as np
 import pytest
 from scipy.spatial.transform import Rotation as R
 
+_PATH_MAP = {
+    "scripts/stage_tpose.py": "packages/gmr-harness/src/gmr_harness/cli/stage_tpose.py",
+    "examples/gmr_tpose_validate.py": "packages/gmr-harness/src/gmr_harness/cli/validate.py",
+    "examples/gmr_alignment_agent.py": "packages/gmr-harness/src/gmr_harness/cli/agent.py",
+}
+
 
 def _read(rel_path: str) -> str:
-    return Path(rel_path).read_text()
+    mapped = _PATH_MAP.get(rel_path, rel_path)
+    return Path(mapped).read_text()
 
 
 class TestStageTposeSmplxRootQuat:
@@ -46,7 +53,7 @@ class TestValidatorSmplxIdentityCheck:
     def test_source_checks_identity_root(self):
         source = _read("examples/gmr_tpose_validate.py")
         assert "identity" in source
-        assert "stage_tpose.py --src smplx" in source
+        assert "gmr-harness stage --src smplx" in source
 
     def test_source_no_smplx_base_rotation_import(self):
         source = _read("examples/gmr_tpose_validate.py")

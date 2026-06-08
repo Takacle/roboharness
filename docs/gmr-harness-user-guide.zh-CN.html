@@ -1,0 +1,1272 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GMR-Harness 从零开始使用指南</title>
+<style>
+:root {
+  --color-bg: #fafbfc;
+  --color-surface: #ffffff;
+  --color-border: #e1e4e8;
+  --color-text: #24292e;
+  --color-text-secondary: #586069;
+  --color-text-tertiary: #6a737d;
+  --color-accent: #0366d6;
+  --color-accent-light: #f1f8ff;
+  --color-accent-hover: #0550ae;
+  --color-code-bg: #f6f8fa;
+  --color-code-inline-bg: #eff1f3;
+  --color-table-stripe: #f6f8fa;
+  --color-success: #22863a;
+  --color-warning: #e36209;
+  --color-danger: #d73a49;
+  --color-sidebar-bg: #ffffff;
+  --color-sidebar-active: #0366d6;
+  --sidebar-width: 280px;
+  --header-height: 56px;
+  --max-content-width: 960px;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Helvetica, Arial,
+    sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { font-size: 16px; scroll-behavior: smooth; scroll-padding-top: calc(var(--header-height) + 24px); }
+
+body {
+  font-family: var(--font-sans);
+  color: var(--color-text);
+  background: var(--color-bg);
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Header ─────────────────────────────────────────────── */
+.site-header {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  height: var(--header-height);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  display: flex; align-items: center; padding: 0 24px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.04);
+}
+.site-header h1 {
+  font-size: 1.1rem; font-weight: 600; color: var(--color-text);
+  white-space: nowrap;
+}
+.site-header h1 code {
+  font-family: var(--font-mono);
+  font-size: .95rem;
+  background: var(--color-accent-light);
+  color: var(--color-accent);
+  padding: 2px 8px; border-radius: 4px;
+}
+.menu-toggle {
+  display: none; background: none; border: none; cursor: pointer;
+  width: 32px; height: 32px; margin-right: 12px; position: relative;
+}
+.menu-toggle span {
+  display: block; width: 20px; height: 2px; background: var(--color-text);
+  position: absolute; left: 6px; transition: .2s;
+}
+.menu-toggle span:nth-child(1) { top: 8px; }
+.menu-toggle span:nth-child(2) { top: 15px; }
+.menu-toggle span:nth-child(3) { top: 22px; }
+
+/* ── Layout ─────────────────────────────────────────────── */
+.layout {
+  display: flex;
+  margin-top: var(--header-height);
+  min-height: calc(100vh - var(--header-height));
+}
+
+/* ── Sidebar ────────────────────────────────────────────── */
+.sidebar {
+  width: var(--sidebar-width);
+  min-width: var(--sidebar-width);
+  background: var(--color-sidebar-bg);
+  border-right: 1px solid var(--color-border);
+  position: fixed;
+  top: var(--header-height);
+  bottom: 0;
+  overflow-y: auto;
+  padding: 20px 0;
+  scrollbar-width: thin;
+}
+.sidebar ul { list-style: none; }
+.sidebar .nav-group > li { margin-bottom: 2px; }
+.sidebar .nav-group > li > a {
+  display: block;
+  padding: 6px 24px;
+  font-size: .875rem;
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  border-left: 3px solid transparent;
+  transition: .15s;
+}
+.sidebar .nav-group > li > a:hover {
+  color: var(--color-accent);
+  background: var(--color-accent-light);
+}
+.sidebar .nav-group > li > a.active {
+  color: var(--color-sidebar-active);
+  border-left-color: var(--color-sidebar-active);
+  background: var(--color-accent-light);
+  font-weight: 600;
+}
+.sidebar .nav-sub {
+  padding-left: 20px;
+  margin: 2px 0 4px 0;
+}
+.sidebar .nav-sub a {
+  display: block;
+  padding: 4px 24px 4px 16px;
+  font-size: .8125rem;
+  color: var(--color-text-tertiary);
+  text-decoration: none;
+  border-left: 2px solid transparent;
+  transition: .15s;
+}
+.sidebar .nav-sub a:hover {
+  color: var(--color-accent);
+}
+.sidebar .nav-sub a.active {
+  color: var(--color-sidebar-active);
+  border-left-color: var(--color-sidebar-active);
+}
+.sidebar .toc-title {
+  padding: 0 24px 8px;
+  font-size: .75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--color-text-tertiary);
+}
+
+/* ── Main content ───────────────────────────────────────── */
+.main-content {
+  flex: 1;
+  margin-left: var(--sidebar-width);
+  padding: 32px 48px 80px;
+  max-width: calc(var(--sidebar-width) + var(--max-content-width) + 48px);
+}
+.main-content > .content-inner {
+  max-width: var(--max-content-width);
+}
+
+/* ── Headings ───────────────────────────────────────────── */
+.content-inner h2 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--color-text);
+  margin: 48px 0 16px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--color-border);
+}
+.content-inner h3 {
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: var(--color-text);
+  margin: 32px 0 12px;
+}
+.content-inner h4 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  margin: 24px 0 8px;
+}
+
+/* ── Paragraphs / lists ─────────────────────────────────── */
+.content-inner p {
+  margin: 0 0 14px;
+}
+.content-inner ul, .content-inner ol {
+  margin: 0 0 14px;
+  padding-left: 24px;
+}
+.content-inner li { margin-bottom: 4px; }
+
+/* ── Links ──────────────────────────────────────────────── */
+.content-inner a {
+  color: var(--color-accent);
+  text-decoration: none;
+}
+.content-inner a:hover { text-decoration: underline; }
+
+/* ── Inline code ────────────────────────────────────────── */
+.content-inner code {
+  font-family: var(--font-mono);
+  font-size: .875em;
+  background: var(--color-code-inline-bg);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--color-text);
+}
+
+/* ── Code blocks ────────────────────────────────────────── */
+.code-block {
+  position: relative;
+  margin: 0 0 16px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  background: var(--color-code-bg);
+}
+.code-block .code-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 14px;
+  font-size: .75rem;
+  color: var(--color-text-tertiary);
+  background: var(--color-border);
+  font-family: var(--font-mono);
+}
+.code-block .copy-btn {
+  background: none; border: none; cursor: pointer;
+  font-size: .75rem; color: var(--color-text-tertiary);
+  font-family: var(--font-sans);
+  padding: 2px 8px; border-radius: 4px;
+  transition: .15s;
+}
+.code-block .copy-btn:hover {
+  background: rgba(0,0,0,.08);
+  color: var(--color-text);
+}
+.code-block pre {
+  margin: 0;
+  padding: 14px 18px;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: .8125rem;
+  line-height: 1.65;
+  color: var(--color-text);
+  tab-size: 2;
+}
+
+/* ── Tables ─────────────────────────────────────────────── */
+.table-wrap {
+  margin: 0 0 16px;
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+}
+.content-inner table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .875rem;
+}
+.content-inner thead th {
+  background: var(--color-code-bg);
+  font-weight: 600;
+  text-align: left;
+  padding: 10px 14px;
+  border-bottom: 2px solid var(--color-border);
+  white-space: nowrap;
+}
+.content-inner tbody td {
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: top;
+}
+.content-inner tbody tr:last-child td { border-bottom: none; }
+.content-inner tbody tr:nth-child(even) { background: var(--color-table-stripe); }
+.content-inner tbody code {
+  white-space: nowrap;
+}
+
+/* ── Callouts ───────────────────────────────────────────── */
+.callout {
+  margin: 0 0 16px;
+  padding: 14px 18px;
+  border-radius: 8px;
+  border-left: 4px solid var(--color-accent);
+  background: var(--color-accent-light);
+  font-size: .9rem;
+}
+.callout.warning {
+  border-left-color: var(--color-warning);
+  background: #fff8f0;
+}
+.callout.success {
+  border-left-color: var(--color-success);
+  background: #f0fff4;
+}
+.callout.danger {
+  border-left-color: var(--color-danger);
+  background: #fff0f0;
+}
+.callout-title {
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+/* ── Flow diagram ───────────────────────────────────────── */
+.flow-diagram {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  margin: 20px auto 24px;
+  padding: 24px;
+  background: var(--color-code-bg);
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  max-width: 520px;
+}
+.flow-step {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 10px 20px;
+  text-align: center;
+  font-size: .875rem;
+  width: 100%;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06);
+}
+.flow-step strong {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: .8125rem;
+  color: var(--color-accent);
+  margin-bottom: 2px;
+}
+.flow-arrow {
+  font-size: 1.2rem;
+  color: var(--color-text-tertiary);
+  padding: 4px 0;
+}
+
+/* ── Section anchor offset ──────────────────────────────── */
+.section-anchor {
+  display: block;
+  position: relative;
+  top: calc(-1 * var(--header-height) - 16px);
+  visibility: hidden;
+  height: 0;
+}
+
+/* ── Back to top ────────────────────────────────────────── */
+.back-to-top {
+  position: fixed;
+  bottom: 28px;
+  right: 28px;
+  width: 40px; height: 40px;
+  background: var(--color-accent);
+  color: #fff;
+  border: none; border-radius: 50%;
+  cursor: pointer;
+  font-size: 1.2rem;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 8px rgba(3,102,214,.35);
+  opacity: 0; pointer-events: none;
+  transition: opacity .25s;
+}
+.back-to-top.visible { opacity: 1; pointer-events: auto; }
+.back-to-top:hover { background: var(--color-accent-hover); }
+
+/* ── Footer ─────────────────────────────────────────────── */
+.site-footer {
+  margin-top: 48px;
+  padding: 20px 0;
+  border-top: 1px solid var(--color-border);
+  text-align: center;
+  font-size: .8125rem;
+  color: var(--color-text-tertiary);
+}
+
+/* ── Responsive ─────────────────────────────────────────── */
+@media (max-width: 1024px) {
+  .sidebar { display: none; }
+  .sidebar.open { display: block; }
+  .menu-toggle { display: block; }
+  .main-content { margin-left: 0; padding: 24px 20px 60px; }
+  .sidebar {
+    position: fixed;
+    z-index: 200;
+    box-shadow: 4px 0 16px rgba(0,0,0,.12);
+  }
+}
+@media (max-width: 600px) {
+  .content-inner h2 { font-size: 1.25rem; }
+  .content-inner h3 { font-size: 1.05rem; }
+  .code-block pre { font-size: .75rem; }
+}
+
+/* ── Print ──────────────────────────────────────────────── */
+@media print {
+  .site-header, .sidebar, .back-to-top, .copy-btn { display: none !important; }
+  .main-content { margin-left: 0; padding: 0; }
+  .code-block { border: 1px solid #ccc; }
+  .code-block pre { white-space: pre-wrap; }
+}
+</style>
+</head>
+<body>
+
+<!-- ─── Header ─────────────────────────────────────────── -->
+<header class="site-header">
+  <button class="menu-toggle" id="menuToggle" aria-label="Toggle navigation">
+    <span></span><span></span><span></span>
+  </button>
+  <h1><code>gmr-harness</code> 从零开始使用指南</h1>
+</header>
+
+<!-- ─── Layout ─────────────────────────────────────────── -->
+<div class="layout">
+
+<!-- ─── Sidebar ────────────────────────────────────────── -->
+<nav class="sidebar" id="sidebar">
+  <div class="toc-title">目录</div>
+  <ul class="nav-group">
+    <li><a href="#section-1">1. 你需要准备什么</a></li>
+    <li><a href="#section-2">2. 安装</a>
+      <ul class="nav-sub">
+        <li><a href="#section-2-1">2.1 从 PyPI 安装</a></li>
+        <li><a href="#section-2-2">2.2 在本仓库开发环境安装</a></li>
+      </ul>
+    </li>
+    <li><a href="#section-3">3. 配置 GMR_ROOT</a></li>
+    <li><a href="#section-4">4. 验证 CLI 可用</a></li>
+    <li><a href="#section-5">5. 推荐工作流总览</a></li>
+    <li><a href="#section-6">6. 从零添加一个新机器人</a>
+      <ul class="nav-sub">
+        <li><a href="#section-6-1">6.1 放置 XML</a></li>
+        <li><a href="#section-6-2">6.2 先 dry-run 查看将会做什么</a></li>
+        <li><a href="#section-6-3">6.3 生成 IK config</a></li>
+        <li><a href="#section-6-4">6.4 注册到 GMR params.py</a></li>
+      </ul>
+    </li>
+    <li><a href="#section-7">7. 制作 T-pose 规格</a>
+      <ul class="nav-sub">
+        <li><a href="#section-7-1">7.1 自动生成 T-pose</a></li>
+        <li><a href="#section-7-2">7.2 查看关节列表</a></li>
+        <li><a href="#section-7-3">7.3 手动覆盖关节角度</a></li>
+        <li><a href="#section-7-4">7.4 从已有 qpos 复用</a></li>
+      </ul>
+    </li>
+    <li><a href="#section-8">8. 直接求解 IK quaternion offset</a>
+      <ul class="nav-sub">
+        <li><a href="#section-8-1">8.1 dry-run 验证求解链路</a></li>
+        <li><a href="#section-8-2">8.2 正式写入求解结果</a></li>
+        <li><a href="#section-8-3">8.3 保留部分已有偏移</a></li>
+        <li><a href="#section-8-4">8.4 手动设置 world_rotation</a></li>
+      </ul>
+    </li>
+    <li><a href="#section-9">9. 验证 alignment</a>
+      <ul class="nav-sub">
+        <li><a href="#section-9-1">9.1 BVH / motion 验证</a></li>
+        <li><a href="#section-9-2">9.2 解读输出</a></li>
+      </ul>
+    </li>
+    <li><a href="#section-10">10. SMPL-X 模板校准</a></li>
+    <li><a href="#section-11">11. VLM 视觉迭代优化</a></li>
+    <li><a href="#section-12">12. 真实 E2E 验收</a></li>
+    <li><a href="#section-13">13. 常用命令速查</a></li>
+    <li><a href="#section-14">14. 常见问题</a>
+      <ul class="nav-sub">
+        <li><a href="#section-14-1">14.1 GMR not found</a></li>
+        <li><a href="#section-14-2">14.2 XML 路径不被接受</a></li>
+        <li><a href="#section-14-3">14.3 非 TTY 环境没有写 params.py</a></li>
+        <li><a href="#section-14-4">14.4 dry_run 成功但正式运行失败</a></li>
+        <li><a href="#section-14-5">14.5 SMPL-X body model 找不到</a></li>
+        <li><a href="#section-14-6">14.6 出现接近 180 度偏差</a></li>
+      </ul>
+    </li>
+    <li><a href="#section-15">15. 旧入口迁移说明</a></li>
+  </ul>
+</nav>
+
+<!-- ─── Main content ───────────────────────────────────── -->
+<main class="main-content">
+<div class="content-inner">
+
+<p>本指南面向第一次使用 <code>gmr-harness</code> 的用户，目标是从一个可用的 MuJoCo 机器人 XML 开始，完成 GMR 注册、IK 配置生成、T-pose 规格制作、姿态偏移求解和验证。</p>
+
+<div class="callout">
+  <div class="callout-title">关于 gmr-harness</div>
+  <code>gmr-harness</code> 是独立 Python 包。新流程优先使用 <code>gmr-harness ...</code> 命令；仓库根目录下的 <code>scripts/*.py</code> 和 <code>examples/gmr_*.py</code> 只作为旧入口兼容保留。
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<span class="section-anchor" id="section-1"></span>
+<h2>1. 你需要准备什么</h2>
+
+<h3>必需条件</h3>
+<ul>
+  <li>Python 3.10 或更高版本。</li>
+  <li>一个外部 GMR 仓库，目录内必须有 <code>general_motion_retargeting/params.py</code>。</li>
+  <li>一个机器人 MuJoCo XML，建议直接放在 <code>$GMR_ROOT/assets/&lt;robot&gt;/</code> 下。</li>
+  <li>至少一种人类运动源：BVH、SMPL-X <code>.npz</code>，或 GMR 支持的 offline FBX 数据。</li>
+</ul>
+
+<h3>常用可选依赖</h3>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>功能</th><th>需要安装</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>T-pose stage / MuJoCo 渲染</td><td><code>gmr-harness[mujoco]</code></td></tr>
+    <tr><td>SMPL-X 模板校准</td><td><code>gmr-harness[smplx]</code></td></tr>
+    <tr><td>VLM 视觉迭代 agent</td><td><code>gmr-harness[vlm]</code></td></tr>
+    <tr><td>一次安装全部可选能力</td><td><code>gmr-harness[all]</code></td></tr>
+  </tbody>
+</table>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<span class="section-anchor" id="section-2"></span>
+<h2>2. 安装</h2>
+
+<span class="section-anchor" id="section-2-1"></span>
+<h3>2.1 从 PyPI 安装</h3>
+
+<div class="code-block">
+  <div class="code-label"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>pip install gmr-harness[all]</pre>
+</div>
+
+<p>如果你只需要基础 CLI 和配置生成，可以先安装最小包：</p>
+
+<div class="code-block">
+  <div class="code-label"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>pip install gmr-harness</pre>
+</div>
+
+<span class="section-anchor" id="section-2-2"></span>
+<h3>2.2 在本仓库开发环境安装</h3>
+
+<div class="code-block">
+  <div class="code-label"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>cd /home/user2/roboharness/packages/gmr-harness
+pip install -e ".[dev]"</pre>
+</div>
+
+<p>如需完整运行 MuJoCo、SMPL-X 和 VLM 流程：</p>
+
+<div class="code-block">
+  <div class="code-label"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>pip install -e ".[all,dev]"</pre>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<span class="section-anchor" id="section-3"></span>
+<h2>3. 配置 GMR_ROOT</h2>
+
+<p><code>gmr-harness</code> 不把 GMR 当作 pip 依赖安装。你需要让它能找到 GMR 仓库。</p>
+
+<p>推荐显式设置：</p>
+
+<div class="code-block">
+  <div class="code-label"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>export GMR_ROOT=/path/to/GMR</pre>
+</div>
+
+<p>检查：</p>
+
+<div class="code-block">
+  <div class="code-label"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>test -f "$GMR_ROOT/general_motion_retargeting/params.py"</pre>
+</div>
+
+<p>如果你把 GMR 放在当前项目或 <code>roboharness</code> 的同级目录下，<code>gmr-harness</code> 也会尝试自动发现：</p>
+
+<div class="code-block">
+  <div class="code-label"><span>text</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>parent/
+  GMR/
+    general_motion_retargeting/params.py
+  your-project/</pre>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<span class="section-anchor" id="section-4"></span>
+<h2>4. 验证 CLI 可用</h2>
+
+<p>任何外部依赖未准备好时，<code>--help</code> 也应该能运行：</p>
+
+<div class="code-block">
+  <div class="code-label"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>gmr-harness --help
+gmr-harness setup --help
+gmr-harness stage --help
+gmr-harness validate --help
+gmr-harness agent --help</pre>
+</div>
+
+<p>在源码树内也可以用模块方式验证：</p>
+
+<div class="code-block">
+  <div class="code-label"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>cd /home/user2/roboharness/packages/gmr-harness
+PYTHONPATH=src python -m gmr_harness.cli.main --help</pre>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<span class="section-anchor" id="section-5"></span>
+<h2>5. 推荐工作流总览</h2>
+
+<p>典型流程如下：</p>
+
+<div class="flow-diagram">
+  <div class="flow-step"><strong>准备</strong>准备 GMR + robot XML</div>
+  <div class="flow-arrow">&#8595;</div>
+  <div class="flow-step"><strong>gmr-harness setup</strong>生成 IK config，可选写入 GMR params.py</div>
+  <div class="flow-arrow">&#8595;</div>
+  <div class="flow-step"><strong>gmr-harness stage</strong>生成 specs/tpose/&lt;robot&gt;.json 和三视图参考图</div>
+  <div class="flow-arrow">&#8595;</div>
+  <div class="flow-step"><strong>gmr-harness agent</strong>solve_mode 直接求解 IK quaternion offset</div>
+  <div class="flow-arrow">&#8595;</div>
+  <div class="flow-step"><strong>gmr-harness validate</strong>数值验证 T-pose 偏差</div>
+</div>
+
+<p>默认规格路径统一为当前工作目录下的 <code>specs/tpose/&lt;robot&gt;.json</code>。建议在你的项目根目录运行这些命令，并把 <code>specs/tpose/*.json</code> 和参考 PNG 纳入版本控制。</p>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<span class="section-anchor" id="section-6"></span>
+<h2>6. 从零添加一个新机器人</h2>
+
+<p>下面以机器人名 <code>my_robot</code> 为例。</p>
+
+<span class="section-anchor" id="section-6-1"></span>
+<h3>6.1 放置 XML</h3>
+
+<p>XML 应直接位于 <code>$GMR_ROOT/assets/&lt;robot&gt;/</code> 下，不能嵌套到更深目录：</p>
+
+<div class="code-block">
+  <div class="code-label"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>mkdir -p "$GMR_ROOT/assets/my_robot"
+cp /path/to/robot.xml "$GMR_ROOT/assets/my_robot/robot.xml"</pre>
+</div>
+
+<div class="callout success">
+  <div class="callout-title">正确</div>
+  <code>$GMR_ROOT/assets/my_robot/robot.xml</code>
+</div>
+
+<div class="callout danger">
+  <div class="callout-title">不推荐</div>
+  <code>$GMR_ROOT/assets/my_robot/variants/robot.xml</code>
+</div>
+
+<span class="section-anchor" id="section-6-2"></span>
+<h3>6.2 先 dry-run 查看将会做什么</h3>
+
+<div class="code-block">
+  <div class="code-label"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>gmr-harness setup \
+  --robot my_robot \
+  --xml "$GMR_ROOT/assets/my_robot/robot.xml" \
+  --formats bvh smplx \
+  --dry_run</pre>
+</div>
+
+<p><code>--dry_run</code> 不写入文件，适合检查 body matching、root body、输出路径和缺失的 GMR params 项。</p>
+
+<span class="section-anchor" id="section-6-3"></span>
+<h3>6.3 生成 IK config</h3>
+
+<div class="code-block">
+  <div class="code-label"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>gmr-harness setup \
+  --robot my_robot \
+  --xml "$GMR_ROOT/assets/my_robot/robot.xml" \
+  --formats bvh smplx</pre>
+</div>
+
+<p>生成的配置通常位于：</p>
+
+<div class="code-block">
+  <div class="code-label"><span>text</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>$GMR_ROOT/general_motion_retargeting/ik_configs/bvh_to_my_robot.json
+$GMR_ROOT/general_motion_retargeting/ik_configs/smplx_to_my_robot.json</pre>
+</div>
+
+<span class="section-anchor" id="section-6-4"></span>
+<h3>6.4 注册到 GMR params.py</h3>
+
+<p><code>setup</code> 默认不会在非 TTY 环境静默写 <code>params.py</code>。确认无误后使用 <code>--auto_register --yes</code>：</p>
+
+<div class="code-block">
+  <div class="code-label"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>gmr-harness setup \
+  --robot my_robot \
+  --xml "$GMR_ROOT/assets/my_robot/robot.xml" \
+  --formats bvh smplx \
+  --auto_register \
+  --yes</pre>
+</div>
+
+<p>如需同步更新 GMR 脚本里的 robot choices，可加：</p>
+
+<div class="code-block">
+  <div class="code-label"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>--update_scripts</pre>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<span class="section-anchor" id="section-7"></span>
+<h2>7. 制作 T-pose 规格</h2>
+
+<p>T-pose 规格是后续验证的数值基准。每个机器人至少应该有一份：</p>
+
+<div class="code-block">
+  <div class="code-label"><span>text</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>specs/tpose/&lt;robot&gt;.json
+specs/tpose/&lt;robot&gt;_front.png
+specs/tpose/&lt;robot&gt;_side.png
+specs/tpose/&lt;robot&gt;_back.png</pre>
+</div>
+
+<span class="section-anchor" id="section-7-1"></span>
+<h3>7.1 自动生成 T-pose</h3>
+
+<div class="code-block">
+  <div class="code-label"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>gmr-harness stage \
+  --robot my_robot \
+  --src bvh \
+  --preset tpose \
+  --output_dir specs/tpose</pre>
+</div>
+
+<span class="section-anchor" id="section-7-2"></span>
+<h3>7.2 查看关节列表</h3>
+
+<p>如果自动 T-pose 不理想，先列出可用关节：</p>
+
+<div class="code-block">
+  <div class="code-label"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>gmr-harness stage --robot my_robot --src bvh --list_joints</pre>
+</div>
+
+<span class="section-anchor" id="section-7-3"></span>
+<h3>7.3 手动覆盖关节角度</h3>
+
+<div class="code-block">
+  <div class="code-label"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>gmr-harness stage \
+  --robot my_robot \
+  --src bvh \
+  --preset tpose \
+  --joint left_wrist_roll_joint=0.1 \
+  --joint right_wrist_roll_joint=-0.1 \
+  --output_dir specs/tpose</pre>
+</div>
+
+<span class="section-anchor" id="section-7-4"></span>
+<h3>7.4 从已有 qpos 复用</h3>
+
+<div class="code-block">
+  <div class="code-label"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>gmr-harness stage \
+  --robot my_robot \
+  --src bvh \
+  --qpos_file specs/tpose/my_robot.json \
+  --output_dir specs/tpose</pre>
+</div>
+
+<div class="callout warning">
+  <div class="callout-title">注意</div>
+  生成后务必肉眼检查三张 PNG。参考图错误意味着规格错误，后续数值验证也会跟着错误。
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<span class="section-anchor" id="section-8"></span>
+<h2>8. 直接求解 IK quaternion offset</h2>
+
+<p>如果你有一段标准 T-pose motion，推荐先用 <code>agent --solve_mode</code> 做一次直接求解。</p>
+
+<span class="section-anchor" id="section-8-1"></span>
+<h3>8.1 dry-run 验证求解链路</h3>
+
+<div class="code-block">
+  <div class="code-label"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>gmr-harness agent \
+  --robot my_robot \
+  --src bvh \
+  --motion_file /path/to/tpose.bvh \
+  --tpose_spec specs/tpose/my_robot.json \
+  --tpose_motion /path/to/tpose.bvh \
+  --solve_mode \
+  --dry_run</pre>
+</div>
+
+<p><code>--dry_run</code> 会验证 retargeting 和数值 gate，但不会持久修改 IK config，也不会创建 <code>.bak</code>。</p>
+
+<span class="section-anchor" id="section-8-2"></span>
+<h3>8.2 正式写入求解结果</h3>
+
+<p>确认 dry-run 通过后去掉 <code>--dry_run</code>：</p>
+
+<div class="code-block">
+  <div class="code-label"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>gmr-harness agent \
+  --robot my_robot \
+  --src bvh \
+  --motion_file /path/to/tpose.bvh \
+  --tpose_spec specs/tpose/my_robot.json \
+  --tpose_motion /path/to/tpose.bvh \
+  --solve_mode</pre>
+</div>
+
+<p>第一次正式写入时会为 IK config 创建 <code>.json.bak</code> 备份。</p>
+
+<span class="section-anchor" id="section-8-3"></span>
+<h3>8.3 保留部分已有偏移</h3>
+
+<div class="code-block">
+  <div class="code-label"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>gmr-harness agent \
+  --robot my_robot \
+  --src bvh \
+  --motion_file /path/to/tpose.bvh \
+  --tpose_spec specs/tpose/my_robot.json \
+  --tpose_motion /path/to/tpose.bvh \
+  --solve_mode \
+  --preserve "left_shoulder_yaw_link,right_shoulder_yaw_link"</pre>
+</div>
+
+<span class="section-anchor" id="section-8-4"></span>
+<h3>8.4 手动设置 world_rotation</h3>
+
+<div class="code-block">
+  <div class="code-label"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>gmr-harness agent \
+  --robot my_robot \
+  --src bvh \
+  --motion_file /path/to/tpose.bvh \
+  --tpose_spec specs/tpose/my_robot.json \
+  --tpose_motion /path/to/tpose.bvh \
+  --solve_mode \
+  --world_rot "90,0,0,1"</pre>
+</div>
+
+<p>格式为：<code>angle_deg,axis_x,axis_y,axis_z</code>。</p>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<span class="section-anchor" id="section-9"></span>
+<h2>9. 验证 alignment</h2>
+
+<span class="section-anchor" id="section-9-1"></span>
+<h3>9.1 BVH / motion 验证</h3>
+
+<div class="code-block">
+  <div class="code-label"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>gmr-harness validate \
+  --robot my_robot \
+  --src bvh \
+  --tpose_motion /path/to/tpose.bvh \
+  --spec specs/tpose/my_robot.json \
+  --threshold 5.0</pre>
+</div>
+
+<p>退出码：</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>退出码</th><th>含义</th></tr></thead>
+  <tbody>
+    <tr><td><code>0</code></td><td>PASS，所有检查通过</td></tr>
+    <tr><td><code>1</code></td><td>FAIL，运行成功但偏差超过阈值</td></tr>
+    <tr><td><code>2</code></td><td>参数、spec 或依赖错误</td></tr>
+  </tbody>
+</table>
+</div>
+
+<span class="section-anchor" id="section-9-2"></span>
+<h3>9.2 解读输出</h3>
+
+<p>典型输出：</p>
+
+<div class="code-block">
+  <div class="code-label"><span>text</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>[validate] total_deviation :   3.42deg  (12 links)
+[validate] max_angle       :   1.87deg
+[validate] worst 5:
+           left_shoulder_yaw_link                 1.87deg  axis=[+0.00, +1.00, +0.00]
+[validate] PASS - all links within 5.0deg of T-pose.</pre>
+</div>
+
+<p>经验判断：</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>最大偏差</th><th>判断</th><th>建议</th></tr></thead>
+  <tbody>
+    <tr><td><code>&lt; 1deg</code></td><td>很好</td><td>不需要调整</td></tr>
+    <tr><td><code>1-5deg</code></td><td>可接受</td><td>通常可以使用</td></tr>
+    <tr><td><code>5-30deg</code></td><td>有偏差</td><td>先重新 solve，再检查 T-pose spec</td></tr>
+    <tr><td><code>30-120deg</code></td><td>坐标或 quaternion 可能错</td><td>检查 <code>world_rotation</code>、body mapping 和偏移方向</td></tr>
+    <tr><td><code>&gt; 120deg</code></td><td>可能翻转</td><td>检查 180 度旋转、左右侧映射或源 motion 坐标系</td></tr>
+  </tbody>
+</table>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<span class="section-anchor" id="section-10"></span>
+<h2>10. SMPL-X 模板校准</h2>
+
+<p>SMPL-X motion <code>.npz</code> 可能携带根节点朝向，不适合直接当 T-pose 标准。对于 SMPL-X，优先使用模板校准。</p>
+
+<h3>10.1 准备 body model</h3>
+
+<p>默认路径：</p>
+
+<div class="code-block">
+  <div class="code-label"><span>text</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>$GMR_ROOT/assets/body_models/smplx/SMPLX_MALE.npz</pre>
+</div>
+
+<p>检查：</p>
+
+<div class="code-block">
+  <div class="code-label"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>ls "$GMR_ROOT/assets/body_models/smplx/SMPLX_MALE.npz"</pre>
+</div>
+
+<h3>10.2 stage SMPL-X T-pose spec</h3>
+
+<div class="code-block">
+  <div class="code-label"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>gmr-harness stage \
+  --robot my_robot \
+  --src smplx \
+  --preset tpose \
+  --output_dir specs/tpose</pre>
+</div>
+
+<h3>10.3 使用模板验证</h3>
+
+<div class="code-block">
+  <div class="code-label"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>gmr-harness validate \
+  --robot my_robot \
+  --src smplx \
+  --use_smplx_template \
+  --spec specs/tpose/my_robot.json</pre>
+</div>
+
+<p>如果 body model 不在默认位置：</p>
+
+<div class="code-block">
+  <div class="code-label"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>gmr-harness validate \
+  --robot my_robot \
+  --src smplx \
+  --use_smplx_template \
+  --smplx_template_model /path/to/body_models \
+  --spec specs/tpose/my_robot.json</pre>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<span class="section-anchor" id="section-11"></span>
+<h2>11. VLM 视觉迭代优化</h2>
+
+<p>当直接求解无法满足姿态要求时，可以用 VLM agent 迭代调参。</p>
+
+<h3>11.1 基本命令</h3>
+
+<div class="code-block">
+  <div class="code-label"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>gmr-harness agent \
+  --robot my_robot \
+  --src bvh \
+  --motion_file /path/to/motion.bvh \
+  --tpose_spec specs/tpose/my_robot.json \
+  --tpose_motion /path/to/tpose.bvh \
+  --tune_mode scale \
+  --max_iter 8</pre>
+</div>
+
+<h3>11.2 调优模式</h3>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>模式</th><th>用途</th></tr></thead>
+  <tbody>
+    <tr><td><code>scale</code></td><td>VLM 调整 <code>human_scale_table</code>，默认模式</td></tr>
+    <tr><td><code>weights</code></td><td>VLM 调整 IK match table 权重</td></tr>
+    <tr><td><code>quaternion</code></td><td>VLM 调整 quaternion offset</td></tr>
+    <tr><td><code>optimize_scale</code></td><td>无 VLM，使用数值优化调整 scale</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3>11.3 API 配置</h3>
+
+<p>默认模型参数为 <code>glm-5v-turbo</code>，默认 API base 为 OpenAI-compatible 地址。可通过参数覆盖：</p>
+
+<div class="code-block">
+  <div class="code-label"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>gmr-harness agent \
+  --robot my_robot \
+  --src bvh \
+  --motion_file /path/to/motion.bvh \
+  --model glm-5v-turbo \
+  --api_base https://api.example.com/v1 \
+  --api_key sk-xxx</pre>
+</div>
+
+<p>也可以用环境变量：</p>
+
+<div class="code-block">
+  <div class="code-label"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>export OPENAI_API_KEY=sk-xxx</pre>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<span class="section-anchor" id="section-12"></span>
+<h2>12. 真实 E2E 验收</h2>
+
+<p><code>packages/gmr-harness/scripts/verify_e2e.sh</code> 用于确认安装式 CLI、GMR_ROOT、spec、motion 和 solve-mode dry-run 能一起工作。</p>
+
+<p>在源码树中运行：</p>
+
+<div class="code-block">
+  <div class="code-label"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>cd /home/user2/roboharness/packages/gmr-harness
+GMR_HARNESS_E2E_ROBOT=engineai_pm01 \
+GMR_HARNESS_E2E_SPEC=/home/user2/roboharness/specs/tpose/engineai_pm01.json \
+GMR_HARNESS_E2E_MOTION=/home/user2/soma-retargeter/assets/motions/bvh/Neutral_walk_forward_002__A057.bvh \
+GMR_HARNESS_E2E_GMR_ROOT=/home/user2/GMR \
+bash scripts/verify_e2e.sh</pre>
+</div>
+
+<p>通过时会看到：</p>
+
+<div class="code-block">
+  <div class="code-label"><span>text</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>===== E2E Summary =====
+All tests passed.</pre>
+</div>
+
+<div class="callout">
+  如果没有 motion 文件，脚本会跳过 solve-mode dry-run；这种情况只能证明 help 和路径解析可用，不能证明 retargeting 链路可用。
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<span class="section-anchor" id="section-13"></span>
+<h2>13. 常用命令速查</h2>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>场景</th><th>命令</th></tr></thead>
+  <tbody>
+    <tr><td>查看总帮助</td><td><code>gmr-harness --help</code></td></tr>
+    <tr><td>查看 setup 参数</td><td><code>gmr-harness setup --help</code></td></tr>
+    <tr><td>dry-run 新机器人配置</td><td><code>gmr-harness setup --robot X --xml $GMR_ROOT/assets/X/robot.xml --formats bvh --dry_run</code></td></tr>
+    <tr><td>生成并注册配置</td><td><code>gmr-harness setup --robot X --xml $GMR_ROOT/assets/X/robot.xml --formats bvh --auto_register --yes</code></td></tr>
+    <tr><td>生成 T-pose spec</td><td><code>gmr-harness stage --robot X --src bvh --preset tpose --output_dir specs/tpose</code></td></tr>
+    <tr><td>查看关节列表</td><td><code>gmr-harness stage --robot X --src bvh --list_joints</code></td></tr>
+    <tr><td>solve dry-run</td><td><code>gmr-harness agent --robot X --src bvh --motion_file tpose.bvh --tpose_spec specs/tpose/X.json --tpose_motion tpose.bvh --solve_mode --dry_run</code></td></tr>
+    <tr><td>正式 solve</td><td><code>gmr-harness agent --robot X --src bvh --motion_file tpose.bvh --tpose_spec specs/tpose/X.json --tpose_motion tpose.bvh --solve_mode</code></td></tr>
+    <tr><td>数值验证</td><td><code>gmr-harness validate --robot X --src bvh --tpose_motion tpose.bvh --spec specs/tpose/X.json</code></td></tr>
+    <tr><td>SMPL-X 模板验证</td><td><code>gmr-harness validate --robot X --src smplx --use_smplx_template --spec specs/tpose/X.json</code></td></tr>
+    <tr><td>VLM 调 scale</td><td><code>gmr-harness agent --robot X --src bvh --motion_file motion.bvh --tune_mode scale</code></td></tr>
+  </tbody>
+</table>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<span class="section-anchor" id="section-14"></span>
+<h2>14. 常见问题</h2>
+
+<span class="section-anchor" id="section-14-1"></span>
+<h3>14.1 <code>GMR not found</code></h3>
+
+<p>错误示例：</p>
+
+<div class="code-block">
+  <div class="code-label"><span>text</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>FileNotFoundError: GMR not found. Set GMR_ROOT env var or place GMR/ next to roboharness/.</pre>
+</div>
+
+<p>处理：</p>
+
+<div class="code-block">
+  <div class="code-label"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>export GMR_ROOT=/path/to/GMR
+test -f "$GMR_ROOT/general_motion_retargeting/params.py"</pre>
+</div>
+
+<span class="section-anchor" id="section-14-2"></span>
+<h3>14.2 XML 路径不被接受</h3>
+
+<p><code>gmr-harness setup --xml</code> 要求 XML 直接在 <code>$GMR_ROOT/assets/&lt;robot&gt;/</code> 下。移动 XML 后重试。</p>
+
+<span class="section-anchor" id="section-14-3"></span>
+<h3>14.3 非 TTY 环境没有写 params.py</h3>
+
+<p>这是预期行为。非交互环境写 <code>params.py</code> 必须显式加：</p>
+
+<div class="code-block">
+  <div class="code-label"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>--auto_register --yes</pre>
+</div>
+
+<span class="section-anchor" id="section-14-4"></span>
+<h3>14.4 <code>--dry_run</code> 成功但正式运行失败</h3>
+
+<p><code>setup --dry_run</code> 不执行完整 stage/solve/validate。分别验证每一步：</p>
+
+<div class="code-block">
+  <div class="code-label"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>gmr-harness setup --robot X --xml ... --formats bvh --dry_run
+gmr-harness stage --robot X --src bvh --preset tpose --output_dir specs/tpose
+gmr-harness agent --robot X --src bvh --motion_file tpose.bvh --tpose_spec specs/tpose/X.json --tpose_motion tpose.bvh --solve_mode --dry_run
+gmr-harness validate --robot X --src bvh --tpose_motion tpose.bvh --spec specs/tpose/X.json</pre>
+</div>
+
+<span class="section-anchor" id="section-14-5"></span>
+<h3>14.5 SMPL-X body model 找不到</h3>
+
+<p>检查默认路径：</p>
+
+<div class="code-block">
+  <div class="code-label"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>ls "$GMR_ROOT/assets/body_models/smplx/SMPLX_MALE.npz"</pre>
+</div>
+
+<p>或显式传入：</p>
+
+<div class="code-block">
+  <div class="code-label"><span>bash</span><button class="copy-btn" onclick="copyCode(this)">复制</button></div>
+<pre>--smplx_template_model /path/to/body_models</pre>
+</div>
+
+<span class="section-anchor" id="section-14-6"></span>
+<h3>14.6 出现接近 180 度偏差</h3>
+
+<p>常见原因：</p>
+<ul>
+  <li>用普通行走 <code>.npz</code> 当 SMPL-X T-pose 标准。</li>
+  <li>T-pose spec 本身姿态错误。</li>
+  <li><code>world_rotation</code> 方向不对。</li>
+  <li>左右 body mapping 错误。</li>
+</ul>
+
+<p>优先处理顺序：</p>
+<ol>
+  <li>重新检查 <code>specs/tpose/&lt;robot&gt;_front/side/back.png</code>。</li>
+  <li>对 BVH 路径重新跑 <code>agent --solve_mode --dry_run</code>。</li>
+  <li>对 SMPL-X 路径优先使用 <code>--use_smplx_template</code>。</li>
+  <li>必要时用 <code>--world_rot</code> 明确指定源到机器人坐标变换。</li>
+</ol>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<span class="section-anchor" id="section-15"></span>
+<h2>15. 旧入口迁移说明</h2>
+
+<p>以下旧命令仍保留兼容，但会发出弃用警告：</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>旧入口</th><th>新入口</th></tr></thead>
+  <tbody>
+    <tr><td><code>python scripts/setup_robot.py ...</code></td><td><code>gmr-harness setup ...</code></td></tr>
+    <tr><td><code>python scripts/stage_tpose.py ...</code></td><td><code>gmr-harness stage ...</code></td></tr>
+    <tr><td><code>python examples/gmr_alignment_agent.py ...</code></td><td><code>gmr-harness agent ...</code></td></tr>
+    <tr><td><code>python examples/gmr_tpose_validate.py ...</code></td><td><code>gmr-harness validate ...</code></td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="callout">
+  新脚本、新文档和自动化验收都应使用 <code>gmr-harness</code> CLI。
+</div>
+
+<!-- ── Footer ───────────────────────────────────────────── -->
+<div class="site-footer">
+  GMR-Harness 使用指南 &mdash; 版本随 <code>gmr-harness</code> 包同步更新
+</div>
+
+</div>
+</main>
+</div>
+
+<!-- ── Back to top ──────────────────────────────────────── -->
+<button class="back-to-top" id="backToTop" aria-label="Back to top">&#8593;</button>
+
+<!-- ─── JavaScript ─────────────────────────────────────── -->
+<script>
+(function() {
+  // ── Copy code ──────────────────────────────────────────
+  window.copyCode = function(btn) {
+    var pre = btn.closest('.code-block').querySelector('pre');
+    var text = pre.textContent;
+    navigator.clipboard.writeText(text).then(function() {
+      btn.textContent = '已复制';
+      setTimeout(function() { btn.textContent = '复制'; }, 1500);
+    });
+  };
+
+  // ── Sidebar toggle (mobile) ───────────────────────────
+  var toggle = document.getElementById('menuToggle');
+  var sidebar = document.getElementById('sidebar');
+  toggle.addEventListener('click', function() {
+    sidebar.classList.toggle('open');
+  });
+
+  // ── Active nav tracking ───────────────────────────────
+  var sections = document.querySelectorAll('.section-anchor');
+  var navLinks = document.querySelectorAll('.sidebar a');
+
+  function updateActiveNav() {
+    var scrollTop = window.scrollY;
+    var current = null;
+    sections.forEach(function(s) {
+      if (s.getBoundingClientRect().top <= 80) {
+        current = s;
+      }
+    });
+    navLinks.forEach(function(link) {
+      link.classList.remove('active');
+      if (current && link.getAttribute('href') === '#' + current.id) {
+        link.classList.add('active');
+      }
+    });
+  }
+
+  // ── Back to top ───────────────────────────────────────
+  var backBtn = document.getElementById('backToTop');
+  function updateBackToTop() {
+    backBtn.classList.toggle('visible', window.scrollY > 400);
+  }
+  backBtn.addEventListener('click', function() {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+
+  // ── Scroll listener (throttled) ───────────────────────
+  var ticking = false;
+  window.addEventListener('scroll', function() {
+    if (!ticking) {
+      requestAnimationFrame(function() {
+        updateActiveNav();
+        updateBackToTop();
+        ticking = false;
+      });
+      ticking = true;
+    }
+  });
+
+  // ── Close sidebar on nav click (mobile) ───────────────
+  navLinks.forEach(function(link) {
+    link.addEventListener('click', function() {
+      if (window.innerWidth <= 1024) {
+        sidebar.classList.remove('open');
+      }
+    });
+  });
+
+  // Initial state
+  updateActiveNav();
+  updateBackToTop();
+})();
+</script>
+
+</body>
+</html>
