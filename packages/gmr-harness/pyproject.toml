@@ -45,8 +45,11 @@ vlm = [
     "openai>=1.0",
     "httpx",
 ]
+harness = [
+    "roboharness>=0.2",
+]
 all = [
-    "gmr-harness[smplx,mujoco,vlm]",
+    "gmr-harness[smplx,mujoco,vlm,harness]",
 ]
 dev = [
     "pytest>=7.0",

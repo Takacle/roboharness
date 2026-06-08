@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from roboharness.core.capture import CameraView
+from gmr_harness._capture import CameraView
 
 from gmr_harness.gmr_integration import (
     _SKELETON_EDGES,
