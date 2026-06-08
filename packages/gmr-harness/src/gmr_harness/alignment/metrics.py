@@ -102,6 +102,7 @@ def load_tpose_spec(path: str | Path) -> TposeSpec:
     else:
         data["_resolved_xml_path"] = str(xml)
 
+    data["_spec_path"] = str(p)
     return cast("TposeSpec", data)
 
 

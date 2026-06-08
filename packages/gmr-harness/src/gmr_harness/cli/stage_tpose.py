@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -126,6 +127,9 @@ def _detect_side(jname_lower: str) -> float:
         return 1.0
     if "right" in jname_lower or jname_lower.endswith("_r") or "_r_" in jname_lower:
         return -1.0
+    # u20-style: joint names starting with 'l' or 'r' prefix (e.g. larm1_joint, lleg1_joint)
+    if re.match(r"^[lr][a-z]", jname_lower):
+        return 1.0 if jname_lower[0] == "l" else -1.0
     return 0.0
 
 
@@ -159,6 +163,10 @@ def _detect_tpose_overrides(model: Any, robot_name: str) -> dict[str, float]:
             and "roll" in jname_lower
         ):
             if side != 0.0:
+                overrides[jname] = _TPOSE_SHOULDER_RADS * side
+        elif _axis_close(axis, _SHOULDER_ROLL_AXIS) and "arm" in jname_lower and side != 0.0:
+            # e.g. larm1_joint / rarm1_joint (first X-axis arm joint = shoulder abduction)
+            if "1" in jname_lower:
                 overrides[jname] = _TPOSE_SHOULDER_RADS * side
         elif _axis_close(axis, _ELBOW_AXIS) and "elbow" in jname_lower and "pitch" in jname_lower:
             overrides[jname] = _TPOSE_ELBOW_RADS
