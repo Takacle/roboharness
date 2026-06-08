@@ -1,34 +1,53 @@
 # GMR-Harness
 
-Alignment toolchain for **General Motion Retargeting (GMR)** + Robot Simulation.
+[中文文档](./README.zh-CN.md)
 
-Provides CLI commands and a Python library for SMPL-X template calibration, BVH motion loading, skeleton matching, IK config generation, quaternion offset solving, and VLM-based alignment agent iteration.
+**GMR-Harness** is an alignment toolchain for [GMR](https://github.com/YanjieZe/GMR) (General Motion Retargeting) + Robot Simulation. It provides CLI commands and a Python library for SMPL-X template calibration, BVH motion loading, skeleton matching, IK config generation, quaternion offset solving, and VLM-based alignment agent iteration.
 
 ---
 
-## Installation
+## Why GMR-Harness?
+
+Standalone GMR is a powerful retargeting framework, but using it in production requires additional tooling to bridge the gap between retargeted output and physically plausible robot motion.
+
+### Key features
+
+1. **Automated IK config generation** — Given a new robot's MuJoCo XML, fuzzy-matches joint names across 14 semantic body roles and generates a complete IK config JSON automatically.
+
+2. **T-pose spec staging** — Generate a T-pose specification (JSON + 3-view PNGs) for any robot as the alignment ground truth.
+
+3. **Direct IK quaternion offset solve** — One-shot solve from human bone orientations to correct body-part rotation offsets.
+
+4. **Numerical alignment validation** — Per-link deviation metrics with configurable thresholds and detailed worst-offender reporting.
+
+5. **VLM-driven iterative tuning** — Automatic scale / weights / quaternion adjustment via vision-language model agent, without manual parameter tweaking.
+
+6. **SMPL-X template calibration** — Root-orientation-independent calibration for SMPL-X `.npz` motion data.
+
+7. **Visual replay** — Pause → capture → resume visual inspection of retargeted motion.
+
+---
+
+## Quick Start
+
+### Installation
 
 ```bash
-pip install gmr-harness
+pip install gmr-harness[all]
 ```
 
-### Optional dependencies
+Optional extras:
 
 | Extra | Purpose |
 |-------|---------|
 | `[smplx]` | SMPL-X template calibration |
 | `[mujoco]` | MuJoCo rendering and T-pose staging |
 | `[vlm]` | VLM-based alignment agent |
-| `[harness]` | VLM agent loop (pull in `roboharness`) |
-| `[all]` | Everything above |
+| `[harness]` | VLM agent loop (requires `roboharness`) |
 
-```bash
-pip install gmr-harness[all]
-```
+### GMR setup
 
-### External dependency: GMR
-
-[GMR (general_motion_retargeting)](https://github.com/Takacle/GMR) is **not** on PyPI. Clone it and point `GMR_ROOT`:
+Clone GMR (not on PyPI) and set `GMR_ROOT`:
 
 ```bash
 git clone <GMR_URL> /path/to/GMR
@@ -41,40 +60,23 @@ Verify:
 test -f "$GMR_ROOT/general_motion_retargeting/params.py"
 ```
 
-`gmr-harness` also auto-discovers GMR placed at `../GMR` relative to your project.
+`gmr-harness` also auto-discovers GMR at `../GMR` relative to your project.
 
----
-
-## Quick start
+### Run your first alignment
 
 ```bash
-# Setup a new robot
-gmr-harness setup \
-  --robot my_robot \
-  --xml $GMR_ROOT/assets/my_robot/robot.xml \
-  --formats bvh smplx
+# 1. Setup a new robot
+gmr-harness setup --robot my_robot --xml $GMR_ROOT/assets/my_robot/robot.xml --formats bvh smplx
 
-# Stage T-pose spec
-gmr-harness stage \
-  --robot my_robot \
-  --src bvh \
-  --preset tpose \
-  --output_dir specs/tpose
+# 2. Stage T-pose spec
+gmr-harness stage --robot my_robot --src bvh --preset tpose --output_dir specs/tpose
 
-# Direct IK quaternion solve
-gmr-harness agent \
-  --robot my_robot \
-  --src bvh \
-  --motion_file /path/to/tpose.bvh \
-  --tpose_spec specs/tpose/my_robot.json \
-  --tpose_motion /path/to/tpose.bvh \
-  --solve_mode
+# 3. Direct IK quaternion solve
+gmr-harness agent --robot my_robot --src bvh --motion_file /path/to/tpose.bvh \
+  --tpose_spec specs/tpose/my_robot.json --tpose_motion /path/to/tpose.bvh --solve_mode
 
-# Validate alignment
-gmr-harness validate \
-  --robot my_robot \
-  --src bvh \
-  --tpose_motion /path/to/tpose.bvh \
+# 4. Validate
+gmr-harness validate --robot my_robot --src bvh --tpose_motion /path/to/tpose.bvh \
   --spec specs/tpose/my_robot.json
 ```
 
@@ -96,134 +98,88 @@ gmr-harness agent      Direct IK quaternion offset solve (--solve_mode)
              └── gmr-harness agent       VLM-driven iterative tuning (optional)
 ```
 
-Default spec path: `specs/tpose/<robot>.json` (relative to working directory). Check the PNGs into version control as visual ground truth.
-
 ---
 
-## Detailed usage
+## Usage
 
-### 1. Add a new robot
+### Add a new robot
 
-Place the MuJoCo XML at `$GMR_ROOT/assets/<robot>/robot.xml` (no nesting):
+Place the MuJoCo XML at `$GMR_ROOT/assets/<robot>/robot.xml`:
 
 ```bash
 mkdir -p "$GMR_ROOT/assets/my_robot"
 cp /path/to/robot.xml "$GMR_ROOT/assets/my_robot/robot.xml"
 ```
 
-Dry-run to preview:
+Dry-run first:
 
 ```bash
-gmr-harness setup \
-  --robot my_robot \
-  --xml "$GMR_ROOT/assets/my_robot/robot.xml" \
-  --formats bvh smplx \
-  --dry_run
+gmr-harness setup --robot my_robot --xml "$GMR_ROOT/assets/my_robot/robot.xml" --formats bvh smplx --dry_run
 ```
 
-Generate IK config:
+Generate IK configs:
 
 ```bash
-gmr-harness setup \
-  --robot my_robot \
-  --xml "$GMR_ROOT/assets/my_robot/robot.xml" \
-  --formats bvh smplx
+gmr-harness setup --robot my_robot --xml "$GMR_ROOT/assets/my_robot/robot.xml" --formats bvh smplx
 ```
 
 Configs land at:
 
-```
-$GMR_ROOT/general_motion_retargeting/ik_configs/bvh_to_my_robot.json
-$GMR_ROOT/general_motion_retargeting/ik_configs/smplx_to_my_robot.json
-```
+| Source format | Output path |
+|---------------|-------------|
+| BVH | `$GMR_ROOT/.../ik_configs/bvh_to_my_robot.json` |
+| SMPL-X | `$GMR_ROOT/.../ik_configs/smplx_to_my_robot.json` |
 
 Register to GMR `params.py` (required in non-TTY environments):
 
 ```bash
-gmr-harness setup \
-  --robot my_robot \
-  --xml "$GMR_ROOT/assets/my_robot/robot.xml" \
-  --formats bvh smplx \
-  --auto_register \
-  --yes
+gmr-harness setup --robot my_robot --xml "$GMR_ROOT/assets/my_robot/robot.xml" --formats bvh smplx --auto_register --yes
 ```
 
-### 2. Stage T-pose spec
+### Stage T-pose spec
 
 ```bash
-gmr-harness stage \
-  --robot my_robot \
-  --src bvh \
-  --preset tpose \
-  --output_dir specs/tpose
+gmr-harness stage --robot my_robot --src bvh --preset tpose --output_dir specs/tpose
 ```
 
-Inspecting the generated PNGs is **required** — a bad spec image means bad validation downstream.
+Common flags:
 
-List available joints:
+| Flag | Effect |
+|------|--------|
+| `--list_joints` | Print available joint names |
+| `--joint name=value` | Override specific joint angles |
+| `--qpos_file path` | Reuse existing qpos from a JSON file |
 
-```bash
-gmr-harness stage --robot my_robot --src bvh --list_joints
-```
+**Always inspect the generated PNGs** — a bad spec image means bad validation downstream.
 
-Override specific joints:
-
-```bash
-gmr-harness stage \
-  --robot my_robot \
-  --src bvh \
-  --preset tpose \
-  --joint left_wrist_roll_joint=0.1 \
-  --joint right_wrist_roll_joint=-0.1 \
-  --output_dir specs/tpose
-```
-
-### 3. Direct IK quaternion solve
+### Solve IK quaternion offset
 
 ```bash
 # Dry-run first
-gmr-harness agent \
-  --robot my_robot \
-  --src bvh \
-  --motion_file /path/to/tpose.bvh \
-  --tpose_spec specs/tpose/my_robot.json \
-  --tpose_motion /path/to/tpose.bvh \
-  --solve_mode \
-  --dry_run
+gmr-harness agent --robot my_robot --src bvh --motion_file /path/to/tpose.bvh \
+  --tpose_spec specs/tpose/my_robot.json --tpose_motion /path/to/tpose.bvh \
+  --solve_mode --dry_run
 
 # Apply
-gmr-harness agent \
-  --robot my_robot \
-  --src bvh \
-  --motion_file /path/to/tpose.bvh \
-  --tpose_spec specs/tpose/my_robot.json \
-  --tpose_motion /path/to/tpose.bvh \
+gmr-harness agent --robot my_robot --src bvh --motion_file /path/to/tpose.bvh \
+  --tpose_spec specs/tpose/my_robot.json --tpose_motion /path/to/tpose.bvh \
   --solve_mode
 ```
 
-First run creates a `.json.bak` backup of the existing IK config.
+Common flags:
 
-Preserve existing offsets on specific links:
+| Flag | Effect |
+|------|--------|
+| `--preserve "link1,link2"` | Preserve existing offsets on specific links |
+| `--world_rot "90,0,0,1"` | Override world rotation (angle_deg,axis_x,axis_y,axis_z) |
 
-```bash
---preserve "left_shoulder_yaw_link,right_shoulder_yaw_link"
-```
+First run creates a `.json.bak` backup.
 
-Override world rotation:
-
-```bash
---world_rot "90,0,0,1"    # angle_deg,axis_x,axis_y,axis_z
-```
-
-### 4. Validate alignment
+### Validate alignment
 
 ```bash
-gmr-harness validate \
-  --robot my_robot \
-  --src bvh \
-  --tpose_motion /path/to/tpose.bvh \
-  --spec specs/tpose/my_robot.json \
-  --threshold 5.0
+gmr-harness validate --robot my_robot --src bvh \
+  --tpose_motion /path/to/tpose.bvh --spec specs/tpose/my_robot.json --threshold 5.0
 ```
 
 Exit codes:
@@ -234,7 +190,7 @@ Exit codes:
 | 1 | FAIL — deviations exceed threshold |
 | 2 | Parameter / spec / dependency error |
 
-Deviation interpretation:
+Deviation guide:
 
 | Max deviation | Assessment |
 |--------------|------------|
@@ -244,60 +200,34 @@ Deviation interpretation:
 | 30–120° | Likely coordinate / quaternion misalignment |
 | > 120° | Flipped — check 180° rotation, body mapping, source motion |
 
-### 5. SMPL-X template calibration
+### SMPL-X template calibration
 
 Prefer template-based calibration for SMPL-X `.npz` (raw motion may have root orientation).
 
-Default body model path:
-
-```
-$GMR_ROOT/assets/body_models/smplx/SMPLX_MALE.npz
-```
-
-Stage with SMPL-X:
+Default body model: `$GMR_ROOT/assets/body_models/smplx/SMPLX_MALE.npz`
 
 ```bash
-gmr-harness stage \
-  --robot my_robot \
-  --src smplx \
-  --preset tpose \
-  --output_dir specs/tpose
-```
+# Stage with SMPL-X
+gmr-harness stage --robot my_robot --src smplx --preset tpose --output_dir specs/tpose
 
-Validate with template:
+# Validate with template
+gmr-harness validate --robot my_robot --src smplx \
+  --use_smplx_template --spec specs/tpose/my_robot.json
 
-```bash
-gmr-harness validate \
-  --robot my_robot \
-  --src smplx \
-  --use_smplx_template \
+# Custom body model path
+gmr-harness validate --robot my_robot --src smplx \
+  --use_smplx_template --smplx_template_model /path/to/body_models \
   --spec specs/tpose/my_robot.json
 ```
 
-Custom body model path:
+### VLM-driven iterative tuning
+
+When direct solve isn't enough, the VLM agent iteratively adjusts parameters.
 
 ```bash
-gmr-harness validate \
-  --robot my_robot \
-  --src smplx \
-  --use_smplx_template \
-  --smplx_template_model /path/to/body_models \
-  --spec specs/tpose/my_robot.json
-```
-
-### 6. VLM-driven iterative tuning
-
-When direct solve is insufficient, the VLM agent iteratively adjusts parameters.
-
-```bash
-gmr-harness agent \
-  --robot my_robot \
-  --src bvh \
-  --motion_file /path/to/motion.bvh \
-  --tpose_spec specs/tpose/my_robot.json \
-  --tpose_motion /path/to/tpose.bvh \
-  --tune_mode scale \
-  --max_iter 8
+gmr-harness agent --robot my_robot --src bvh --motion_file /path/to/motion.bvh \
+  --tpose_spec specs/tpose/my_robot.json --tpose_motion /path/to/tpose.bvh \
+  --tune_mode scale --max_iter 8
 ```
 
 Tuning modes:
@@ -309,27 +239,16 @@ Tuning modes:
 | `quaternion` | VLM adjusts quaternion offset |
 | `optimize_scale` | Numerical optimization without VLM |
 
-Default VLM model: `glm-5v-turbo`. Override:
+Default VLM model: `glm-5v-turbo`. Override via flags or `OPENAI_API_KEY` env var:
 
 ```bash
-gmr-harness agent \
-  --robot my_robot \
-  --src bvh \
-  --motion_file /path/to/motion.bvh \
-  --model glm-5v-turbo \
-  --api_base https://api.example.com/v1 \
-  --api_key sk-xxx
-```
-
-Or via environment variable:
-
-```bash
-export OPENAI_API_KEY=sk-xxx
+gmr-harness agent --robot my_robot --src bvh --motion_file /path/to/motion.bvh \
+  --model glm-5v-turbo --api_base https://api.example.com/v1 --api_key sk-xxx
 ```
 
 ---
 
-## CLI reference
+## CLI Reference
 
 | Command | Description |
 |---------|-------------|
@@ -356,13 +275,13 @@ test -f "$GMR_ROOT/general_motion_retargeting/params.py"
 
 ### XML path rejected
 
-`--xml` must resolve to a file under `$GMR_ROOT/assets/<robot>/`. Move the XML and retry.
+The XML must be at `$GMR_ROOT/assets/<robot>/`. Move it and retry.
 
-### params.py not modified in non-TTY
+### params.py not modified
 
-Explicitly pass `--auto_register --yes` to `gmr-harness setup`.
+Pass `--auto_register --yes` (required in non-TTY environments).
 
-### ˜180° deviation
+### ~180° deviation
 
 Common causes:
 - Using a walking `.npz` as SMPL-X T-pose standard
@@ -370,7 +289,7 @@ Common causes:
 - Wrong `world_rotation`
 - Left/right body mapping error
 
-Fix order: check spec PNGs → re-solve BVH path with `--dry_run` → prefer `--use_smplx_template` for SMPL-X → set `--world_rot` explicitly.
+Fix order: check spec PNGs → re-solve with `--dry_run` → use `--use_smplx_template` for SMPL-X → set `--world_rot` explicitly.
 
 ### SMPL-X body model not found
 
@@ -384,7 +303,7 @@ Or pass `--smplx_template_model /path/to/body_models`.
 
 ## License
 
-MIT
+[MIT](LICENSE)
 
 ---
 
@@ -396,13 +315,37 @@ MIT
 
 ---
 
-## 安装
+## 为什么需要 GMR-Harness？
+
+GMR 本身是强大的重定向框架，但在生产环境中使用需要额外工具来弥合输出与物理合理机器人运动之间的差距。
+
+### 核心功能
+
+1. **自动 IK 配置生成** — 给定新机器人的 MuJoCo XML，跨 14 个语义身体角色模糊匹配关节名称，自动生成完整 IK 配置 JSON。
+
+2. **T-pose 规格制作** — 为任何机器人生成 T-pose 规格（JSON + 三视图 PNG），作为对齐的数值基准。
+
+3. **直接 IK 四元数偏移求解** — 从人体骨骼朝向一步求解，修正身体部位的旋转偏移。
+
+4. **数值对齐验证** — 每个关节的偏差指标，可配置阈值，详细报告最差关节。
+
+5. **VLM 驱动的迭代调优** — 通过视觉语言模型智能体自动调整 scale / weights / quaternion，无需手动调参。
+
+6. **SMPL-X 模板校准** — 对 SMPL-X `.npz` 运动数据进行与根节点朝向无关的校准。
+
+7. **视觉回放** — 暂停→捕获→恢复的视觉检查流程。
+
+---
+
+## 快速开始
+
+### 安装
 
 ```bash
-pip install gmr-harness
+pip install gmr-harness[all]
 ```
 
-### 可选依赖
+可选依赖：
 
 | 额外包 | 用途 |
 |--------|------|
@@ -410,15 +353,10 @@ pip install gmr-harness
 | `[mujoco]` | MuJoCo 渲染和 T-pose 制作 |
 | `[vlm]` | VLM 视觉对齐智能体 |
 | `[harness]` | 智能体循环（依赖 `roboharness`） |
-| `[all]` | 全部以上功能 |
 
-```bash
-pip install gmr-harness[all]
-```
+### GMR 配置
 
-### 外部依赖：GMR
-
-[GMR（general_motion_retargeting）](https://github.com/Takacle/GMR) **不在 PyPI 上**，需要单独克隆并设置 `GMR_ROOT`：
+克隆 GMR（不在 PyPI 上）并设置 `GMR_ROOT`：
 
 ```bash
 git clone <GMR_URL> /path/to/GMR
@@ -433,38 +371,21 @@ test -f "$GMR_ROOT/general_motion_retargeting/params.py"
 
 `gmr-harness` 也会自动检测项目同级目录 `../GMR`。
 
----
-
-## 快速开始
+### 运行第一次对齐
 
 ```bash
-# 配置新机器人
-gmr-harness setup \
-  --robot my_robot \
-  --xml $GMR_ROOT/assets/my_robot/robot.xml \
-  --formats bvh smplx
+# 1. 配置新机器人
+gmr-harness setup --robot my_robot --xml $GMR_ROOT/assets/my_robot/robot.xml --formats bvh smplx
 
-# 制作 T-pose 规格
-gmr-harness stage \
-  --robot my_robot \
-  --src bvh \
-  --preset tpose \
-  --output_dir specs/tpose
+# 2. 制作 T-pose 规格
+gmr-harness stage --robot my_robot --src bvh --preset tpose --output_dir specs/tpose
 
-# 直接求解 IK quaternion offset
-gmr-harness agent \
-  --robot my_robot \
-  --src bvh \
-  --motion_file /path/to/tpose.bvh \
-  --tpose_spec specs/tpose/my_robot.json \
-  --tpose_motion /path/to/tpose.bvh \
-  --solve_mode
+# 3. 直接求解 IK quaternion offset
+gmr-harness agent --robot my_robot --src bvh --motion_file /path/to/tpose.bvh \
+  --tpose_spec specs/tpose/my_robot.json --tpose_motion /path/to/tpose.bvh --solve_mode
 
-# 验证对齐结果
-gmr-harness validate \
-  --robot my_robot \
-  --src bvh \
-  --tpose_motion /path/to/tpose.bvh \
+# 4. 验证
+gmr-harness validate --robot my_robot --src bvh --tpose_motion /path/to/tpose.bvh \
   --spec specs/tpose/my_robot.json
 ```
 
@@ -486,134 +407,88 @@ gmr-harness agent      直接求解 IK quaternion offset（--solve_mode）
              └── gmr-harness agent       VLM 迭代调优（可选）
 ```
 
-默认规格路径：`specs/tpose/<robot>.json`（相对于工作目录）。建议将 PNG 参考图纳入版本控制。
-
 ---
 
 ## 详细用法
 
-### 1. 添加新机器人
+### 添加新机器人
 
-将 MuJoCo XML 放在 `$GMR_ROOT/assets/<robot>/robot.xml`（不要嵌套子目录）：
+将 MuJoCo XML 放在 `$GMR_ROOT/assets/<robot>/robot.xml`：
 
 ```bash
 mkdir -p "$GMR_ROOT/assets/my_robot"
 cp /path/to/robot.xml "$GMR_ROOT/assets/my_robot/robot.xml"
 ```
 
-先 dry-run 预览：
+先 dry-run：
 
 ```bash
-gmr-harness setup \
-  --robot my_robot \
-  --xml "$GMR_ROOT/assets/my_robot/robot.xml" \
-  --formats bvh smplx \
-  --dry_run
+gmr-harness setup --robot my_robot --xml "$GMR_ROOT/assets/my_robot/robot.xml" --formats bvh smplx --dry_run
 ```
 
 生成 IK 配置：
 
 ```bash
-gmr-harness setup \
-  --robot my_robot \
-  --xml "$GMR_ROOT/assets/my_robot/robot.xml" \
-  --formats bvh smplx
+gmr-harness setup --robot my_robot --xml "$GMR_ROOT/assets/my_robot/robot.xml" --formats bvh smplx
 ```
 
-配置文件位于：
+配置文件路径：
 
-```
-$GMR_ROOT/general_motion_retargeting/ik_configs/bvh_to_my_robot.json
-$GMR_ROOT/general_motion_retargeting/ik_configs/smplx_to_my_robot.json
-```
+| 源格式 | 输出路径 |
+|--------|----------|
+| BVH | `$GMR_ROOT/.../ik_configs/bvh_to_my_robot.json` |
+| SMPL-X | `$GMR_ROOT/.../ik_configs/smplx_to_my_robot.json` |
 
 注册到 GMR `params.py`（非 TTY 环境必须显式指定）：
 
 ```bash
-gmr-harness setup \
-  --robot my_robot \
-  --xml "$GMR_ROOT/assets/my_robot/robot.xml" \
-  --formats bvh smplx \
-  --auto_register \
-  --yes
+gmr-harness setup --robot my_robot --xml "$GMR_ROOT/assets/my_robot/robot.xml" --formats bvh smplx --auto_register --yes
 ```
 
-### 2. 制作 T-pose 规格
+### 制作 T-pose 规格
 
 ```bash
-gmr-harness stage \
-  --robot my_robot \
-  --src bvh \
-  --preset tpose \
-  --output_dir specs/tpose
+gmr-harness stage --robot my_robot --src bvh --preset tpose --output_dir specs/tpose
 ```
+
+常用参数：
+
+| 参数 | 作用 |
+|------|------|
+| `--list_joints` | 打印可用关节名称 |
+| `--joint name=值` | 覆盖指定关节角度 |
+| `--qpos_file 路径` | 复用已有 qpos JSON |
 
 **务必肉眼检查生成的 PNG**——规格图错误会导致后续验证全部错误。
 
-查看可用关节：
-
-```bash
-gmr-harness stage --robot my_robot --src bvh --list_joints
-```
-
-手动覆盖关节角度：
-
-```bash
-gmr-harness stage \
-  --robot my_robot \
-  --src bvh \
-  --preset tpose \
-  --joint left_wrist_roll_joint=0.1 \
-  --joint right_wrist_roll_joint=-0.1 \
-  --output_dir specs/tpose
-```
-
-### 3. 直接求解 IK quaternion offset
+### 求解 IK quaternion offset
 
 ```bash
 # 先用 dry-run 验证
-gmr-harness agent \
-  --robot my_robot \
-  --src bvh \
-  --motion_file /path/to/tpose.bvh \
-  --tpose_spec specs/tpose/my_robot.json \
-  --tpose_motion /path/to/tpose.bvh \
-  --solve_mode \
-  --dry_run
+gmr-harness agent --robot my_robot --src bvh --motion_file /path/to/tpose.bvh \
+  --tpose_spec specs/tpose/my_robot.json --tpose_motion /path/to/tpose.bvh \
+  --solve_mode --dry_run
 
 # 正式写入
-gmr-harness agent \
-  --robot my_robot \
-  --src bvh \
-  --motion_file /path/to/tpose.bvh \
-  --tpose_spec specs/tpose/my_robot.json \
-  --tpose_motion /path/to/tpose.bvh \
+gmr-harness agent --robot my_robot --src bvh --motion_file /path/to/tpose.bvh \
+  --tpose_spec specs/tpose/my_robot.json --tpose_motion /path/to/tpose.bvh \
   --solve_mode
 ```
 
+常用参数：
+
+| 参数 | 作用 |
+|------|------|
+| `--preserve "link1,link2"` | 保留指定关节的已有偏移 |
+| `--world_rot "90,0,0,1"` | 覆盖 world rotation（角度,轴x,轴y,轴z） |
+
 首次运行会自动创建 `.json.bak` 备份。
 
-保留特定关节的已有偏移：
+### 验证对齐结果
 
 ```bash
---preserve "left_shoulder_yaw_link,right_shoulder_yaw_link"
-```
-
-覆盖 world rotation：
-
-```bash
---world_rot "90,0,0,1"    # 角度,轴x,轴y,轴z
-```
-
-### 4. 验证对齐结果
-
-```bash
-gmr-harness validate \
-  --robot my_robot \
-  --src bvh \
-  --tpose_motion /path/to/tpose.bvh \
-  --spec specs/tpose/my_robot.json \
-  --threshold 5.0
+gmr-harness validate --robot my_robot --src bvh \
+  --tpose_motion /path/to/tpose.bvh --spec specs/tpose/my_robot.json --threshold 5.0
 ```
 
 退出码：
@@ -634,60 +509,34 @@ gmr-harness validate \
 | 30–120° | 坐标或四元数可能错误 |
 | > 120° | 翻转——检查 180° 旋转、body mapping、源运动 |
 
-### 5. SMPL-X 模板校准
+### SMPL-X 模板校准
 
 SMPL-X `.npz` 优先使用模板校准（原始运动可能带有根节点朝向）。
 
-默认 body model 路径：
-
-```
-$GMR_ROOT/assets/body_models/smplx/SMPLX_MALE.npz
-```
-
-使用 SMPL-X 制作 T-pose：
+默认 body model 路径：`$GMR_ROOT/assets/body_models/smplx/SMPLX_MALE.npz`
 
 ```bash
-gmr-harness stage \
-  --robot my_robot \
-  --src smplx \
-  --preset tpose \
-  --output_dir specs/tpose
-```
+# 使用 SMPL-X 制作 T-pose
+gmr-harness stage --robot my_robot --src smplx --preset tpose --output_dir specs/tpose
 
-使用模板验证：
+# 使用模板验证
+gmr-harness validate --robot my_robot --src smplx \
+  --use_smplx_template --spec specs/tpose/my_robot.json
 
-```bash
-gmr-harness validate \
-  --robot my_robot \
-  --src smplx \
-  --use_smplx_template \
+# 自定义 body model 路径
+gmr-harness validate --robot my_robot --src smplx \
+  --use_smplx_template --smplx_template_model /path/to/body_models \
   --spec specs/tpose/my_robot.json
 ```
 
-自定义 body model 路径：
-
-```bash
-gmr-harness validate \
-  --robot my_robot \
-  --src smplx \
-  --use_smplx_template \
-  --smplx_template_model /path/to/body_models \
-  --spec specs/tpose/my_robot.json
-```
-
-### 6. VLM 迭代调优
+### VLM 迭代调优
 
 当直接求解无法满足要求时，VLM 智能体可以迭代调整参数。
 
 ```bash
-gmr-harness agent \
-  --robot my_robot \
-  --src bvh \
-  --motion_file /path/to/motion.bvh \
-  --tpose_spec specs/tpose/my_robot.json \
-  --tpose_motion /path/to/tpose.bvh \
-  --tune_mode scale \
-  --max_iter 8
+gmr-harness agent --robot my_robot --src bvh --motion_file /path/to/motion.bvh \
+  --tpose_spec specs/tpose/my_robot.json --tpose_motion /path/to/tpose.bvh \
+  --tune_mode scale --max_iter 8
 ```
 
 调优模式：
@@ -699,22 +548,11 @@ gmr-harness agent \
 | `quaternion` | VLM 调整四元数偏移 |
 | `optimize_scale` | 无 VLM，使用数值优化 |
 
-默认 VLM 模型：`glm-5v-turbo`。可通过参数覆盖：
+默认 VLM 模型：`glm-5v-turbo`。可通过参数或 `OPENAI_API_KEY` 环境变量覆盖：
 
 ```bash
-gmr-harness agent \
-  --robot my_robot \
-  --src bvh \
-  --motion_file /path/to/motion.bvh \
-  --model glm-5v-turbo \
-  --api_base https://api.example.com/v1 \
-  --api_key sk-xxx
-```
-
-或通过环境变量：
-
-```bash
-export OPENAI_API_KEY=sk-xxx
+gmr-harness agent --robot my_robot --src bvh --motion_file /path/to/motion.bvh \
+  --model glm-5v-turbo --api_base https://api.example.com/v1 --api_key sk-xxx
 ```
 
 ---
@@ -746,11 +584,11 @@ test -f "$GMR_ROOT/general_motion_retargeting/params.py"
 
 ### XML 路径不被接受
 
-`--xml` 必须在 `$GMR_ROOT/assets/<robot>/` 下。移动 XML 后重试。
+XML 必须在 `$GMR_ROOT/assets/<robot>/` 下。移动后重试。
 
-### 非 TTY 环境 params.py 没有更新
+### params.py 没有更新
 
-需要显式加上 `--auto_register --yes`。
+传递 `--auto_register --yes`（非 TTY 环境必需）。
 
 ### 接近 180° 偏差
 
@@ -760,7 +598,7 @@ test -f "$GMR_ROOT/general_motion_retargeting/params.py"
 - `world_rotation` 方向不对
 - 左右 body mapping 错误
 
-处理顺序：检查 spec PNG → 重新 BVH dry-run → SMPL-X 优先 `--use_smplx_template` → 显式设置 `--world_rot`。
+处理顺序：检查 spec PNG → 重新 `--dry_run` → SMPL-X 优先 `--use_smplx_template` → 显式设置 `--world_rot`。
 
 ### SMPL-X body model 找不到
 
@@ -774,4 +612,4 @@ ls "$GMR_ROOT/assets/body_models/smplx/SMPLX_MALE.npz"
 
 ## 许可证
 
-MIT
+[MIT](LICENSE)
